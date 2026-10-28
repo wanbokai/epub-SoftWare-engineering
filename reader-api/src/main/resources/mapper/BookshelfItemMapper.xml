@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.reader.bookshelf.BookshelfItemMapper">
+
+    <resultMap id="BookshelfItemResult" type="com.reader.bookshelf.BookshelfItem">
+        <id property="id" column="id"/>
+        <result property="userId" column="user_id"/>
+        <result property="fileId" column="file_id"/>
+        <result property="displayTitle" column="display_title"/>
+        <result property="progressCfi" column="progress_cfi"/>
+        <result property="progressPercent" column="progress_percent"/>
+        <result property="lastReadAt" column="last_read_at"/>
+        <result property="createdAt" column="created_at"/>
+        <result property="fileType" column="file_type"/>
+        <result property="fileSize" column="file_size"/>
+        <result property="metaTitle" column="meta_title"/>
+        <result property="metaAuthor" column="meta_author"/>
+    </resultMap>
+
+    <insert id="insert" parameterType="com.reader.bookshelf.BookshelfItem" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO bookshelf_item (user_id, file_id, display_title, progress_cfi, progress_percent, last_read_at, created_at)
+        VALUES (#{userId}, #{fileId}, #{displayTitle}, #{progressCfi}, #{progressPercent}, #{lastReadAt}, NOW())
+    </insert>
+
+    <select id="findById" resultMap="BookshelfItemResult">
+        SELECT b.id, b.user_id, b.file_id, b.display_title, b.progress_cfi, b.progress_percent,
+               b.last_read_at, b.created_at, f.file_type, f.file_size, f.meta_title, f.meta_author
+        FROM bookshelf_item b
+        LEFT JOIN file_asset f ON b.file_id = f.id
+        WHERE b.id = #{id}
+    </select>
+
+    <select id="findByUserAndFile" resultMap="BookshelfItemResult">
+        SELECT b.id, b.user_id, b.file_id, b.display_title, b.progress_cfi, b.progress_percent,
+               b.last_read_at, b.created_at, f.file_type, f.file_size, f.meta_title, f.meta_author
+        FROM bookshelf_item b
+        LEFT JOIN file_asset f ON b.file_id = f.id
+        WHERE b.user_id = #{userId} AND b.file_id = #{fileId}
+    </select>
+
+    <select id="listByUser" resultMap="BookshelfItemResult">
+        SELECT b.id, b.user_id, b.file_id, b.display_title, b.progress_cfi, b.progress_percent,
+               b.last_read_at, b.created_at, f.file_type, f.file_size, f.meta_title, f.meta_author
+        FROM bookshelf_item b
+        LEFT JOIN file_asset f ON b.file_id = f.id
+        WHERE b.user_id = #{userId}
+        <if test="keyword != null and keyword != ''">
+            AND b.display_title LIKE CONCAT('%', #{keyword}, '%')
+        </if>
+        ORDER BY b.last_read_at DESC, b.created_at DESC
+    </select>
+
+    <update id="update" parameterType="com.reader.bookshelf.BookshelfItem">
+        UPDATE bookshelf_item
+        SET display_title = #{displayTitle}
+        WHERE id = #{id}
+    </update>
+
+    <update id="updateProgress">
+        UPDATE bookshelf_item
+        SET progress_cfi = #{progressCfi},
+            progress_percent = #{progressPercent},
+            last_read_at = #{lastReadAt}
+        WHERE id = #{id}
+    </update>
+
+    <delete id="deleteById">
+        DELETE FROM bookshelf_item WHERE id = #{id}
+    </delete>
+
+    <select id="countByFileId" resultType="int">
+        SELECT COUNT(*) FROM bookshelf_item WHERE file_id = #{fileId}
+    </select>
+
+</mapper>
