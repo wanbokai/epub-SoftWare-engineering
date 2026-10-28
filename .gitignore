@@ -12,3 +12,10 @@ Thumbs.db
 # 二进制工具（不纳入版本控制，SeaweedFS 需本地自行下载）
 bin/
 seaweed-data/
+
+# Java 编译产物
+target/
+*.class
+
+# 环境变量文件（真实密钥不入库）
+.env

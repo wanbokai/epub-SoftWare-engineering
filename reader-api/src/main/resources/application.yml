@@ -1,0 +1,42 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: reader-api
+  datasource:
+    url: jdbc:mysql://localhost:3306/reader_db?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+    username: root
+    password: "123456"
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  servlet:
+    multipart:
+      max-file-size: 100MB
+      max-request-size: 100MB
+
+mybatis:
+  mapper-locations: classpath:mapper/*.xml
+  type-aliases-package: com.reader
+  configuration:
+    map-underscore-to-camel-case: true
+
+# JWT 配置
+jwt:
+  # 访问令牌有效期（毫秒）：2 小时
+  access-token-ttl: 7200000
+  # 刷新令牌有效期（毫秒）：14 天
+  refresh-token-ttl: 1209600000
+  # 密钥：仅开发环境占位，生产环境须通过环境变量注入（见 .env.example）
+  secret: ${JWT_SECRET:dev-only-secret-key-change-me-in-production-0123456789}
+
+# 对象存储（SeaweedFS，S3 兼容）
+storage:
+  endpoint: http://localhost:8333
+  region: us-east-1
+  access-key: any_access_key_id
+  secret-key: any_secret_access_key
+  bucket: reader-books
+
+logging:
+  level:
+    com.reader: info
