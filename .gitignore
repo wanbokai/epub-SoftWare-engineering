@@ -8,3 +8,7 @@ Thumbs.db
 
 # 日志
 *.log
+
+# 二进制工具（不纳入版本控制，SeaweedFS 需本地自行下载）
+bin/
+seaweed-data/
