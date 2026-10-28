@@ -26,6 +26,16 @@ public interface BookshelfItemMapper {
                        @Param("progressPercent") java.math.BigDecimal progressPercent,
                        @Param("lastReadAt") java.time.LocalDateTime lastReadAt);
 
+    /**
+     * 乐观锁进度更新：仅当版本号匹配时更新并 +1。
+     *
+     * @return 受影响行数（0 表示版本冲突）
+     */
+    int updateProgressWithVersion(@Param("id") Long id,
+                                  @Param("progressCfi") String progressCfi,
+                                  @Param("progressPercent") java.math.BigDecimal progressPercent,
+                                  @Param("expectedVersion") int expectedVersion);
+
     int deleteById(@Param("id") Long id);
 
     int countByFileId(@Param("fileId") Long fileId);

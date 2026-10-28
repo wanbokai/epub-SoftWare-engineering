@@ -16,6 +16,7 @@ public class BookshelfItem {
     private String progressCfi;
     private BigDecimal progressPercent;
     private LocalDateTime lastReadAt;
+    private Integer syncVersion;
     private LocalDateTime createdAt;
 
     // 关联查询时填充的文件元信息（非表字段）
@@ -78,6 +79,14 @@ public class BookshelfItem {
 
     public void setLastReadAt(LocalDateTime lastReadAt) {
         this.lastReadAt = lastReadAt;
+    }
+
+    public Integer getSyncVersion() {
+        return syncVersion;
+    }
+
+    public void setSyncVersion(Integer syncVersion) {
+        this.syncVersion = syncVersion;
     }
 
     public LocalDateTime getCreatedAt() {

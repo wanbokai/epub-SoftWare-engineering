@@ -11,6 +11,7 @@
         <result property="progressCfi" column="progress_cfi"/>
         <result property="progressPercent" column="progress_percent"/>
         <result property="lastReadAt" column="last_read_at"/>
+        <result property="syncVersion" column="sync_version"/>
         <result property="createdAt" column="created_at"/>
         <result property="fileType" column="file_type"/>
         <result property="fileSize" column="file_size"/>
@@ -25,7 +26,7 @@
 
     <select id="findById" resultMap="BookshelfItemResult">
         SELECT b.id, b.user_id, b.file_id, b.display_title, b.progress_cfi, b.progress_percent,
-               b.last_read_at, b.created_at, f.file_type, f.file_size, f.meta_title, f.meta_author
+               b.last_read_at, b.sync_version, b.created_at, f.file_type, f.file_size, f.meta_title, f.meta_author
         FROM bookshelf_item b
         LEFT JOIN file_asset f ON b.file_id = f.id
         WHERE b.id = #{id}
@@ -33,7 +34,7 @@
 
     <select id="findByUserAndFile" resultMap="BookshelfItemResult">
         SELECT b.id, b.user_id, b.file_id, b.display_title, b.progress_cfi, b.progress_percent,
-               b.last_read_at, b.created_at, f.file_type, f.file_size, f.meta_title, f.meta_author
+               b.last_read_at, b.sync_version, b.created_at, f.file_type, f.file_size, f.meta_title, f.meta_author
         FROM bookshelf_item b
         LEFT JOIN file_asset f ON b.file_id = f.id
         WHERE b.user_id = #{userId} AND b.file_id = #{fileId}
@@ -41,7 +42,7 @@
 
     <select id="listByUser" resultMap="BookshelfItemResult">
         SELECT b.id, b.user_id, b.file_id, b.display_title, b.progress_cfi, b.progress_percent,
-               b.last_read_at, b.created_at, f.file_type, f.file_size, f.meta_title, f.meta_author
+               b.last_read_at, b.sync_version, b.created_at, f.file_type, f.file_size, f.meta_title, f.meta_author
         FROM bookshelf_item b
         LEFT JOIN file_asset f ON b.file_id = f.id
         WHERE b.user_id = #{userId}
@@ -63,6 +64,15 @@
             progress_percent = #{progressPercent},
             last_read_at = #{lastReadAt}
         WHERE id = #{id}
+    </update>
+
+    <update id="updateProgressWithVersion">
+        UPDATE bookshelf_item
+        SET progress_cfi = #{progressCfi},
+            progress_percent = #{progressPercent},
+            last_read_at = NOW(),
+            sync_version = sync_version + 1
+        WHERE id = #{id} AND sync_version = #{expectedVersion}
     </update>
 
     <delete id="deleteById">

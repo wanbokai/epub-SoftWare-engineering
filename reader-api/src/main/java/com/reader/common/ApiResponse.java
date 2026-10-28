@@ -35,6 +35,10 @@ public class ApiResponse<T> {
         return new ApiResponse<>(code, message, null);
     }
 
+    public static <T> ApiResponse<T> error(int code, T data) {
+        return new ApiResponse<>(code, "error", data);
+    }
+
     public int getCode() {
         return code;
     }

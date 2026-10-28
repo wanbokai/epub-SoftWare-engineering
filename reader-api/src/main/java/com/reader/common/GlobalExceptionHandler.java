@@ -11,6 +11,7 @@ import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import com.reader.sync.SyncConflictException;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
@@ -19,8 +20,20 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(BusinessException.class)
     public ResponseEntity<ApiResponse<Void>> handleBusiness(BusinessException e) {
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+        // 使用业务异常携带的错误码作为 HTTP 状态码（400/401/403/404/409 等）
+        HttpStatus status = HttpStatus.resolve(e.getCode());
+        if (status == null) {
+            status = HttpStatus.BAD_REQUEST;
+        }
+        return ResponseEntity.status(status)
                 .body(ApiResponse.error(e.getCode(), e.getMessage()));
+    }
+
+    @ExceptionHandler(SyncConflictException.class)
+    public ResponseEntity<ApiResponse<Object>> handleSyncConflict(SyncConflictException e) {
+        // 版本冲突：返回 409 与冲突摘要，供前端消解面板渲染
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(ApiResponse.error(409, e.getConflict()));
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)

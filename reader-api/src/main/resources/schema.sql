@@ -44,6 +44,7 @@ CREATE TABLE IF NOT EXISTS `bookshelf_item` (
     `progress_cfi`     VARCHAR(500)  DEFAULT NULL COMMENT '进度锚点（TXT 存章节号+段内偏移）',
     `progress_percent` DECIMAL(5, 2) DEFAULT 0 COMMENT '全书进度百分比',
     `last_read_at`     DATETIME      DEFAULT NULL COMMENT '最近阅读时间（排序依据）',
+    `sync_version`     INT           NOT NULL DEFAULT 0 COMMENT '进度乐观锁版本号（冲突检测依据）',
     `created_at`       DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '入架时间',
     PRIMARY KEY (`id`),
     UNIQUE KEY `uk_user_file` (`user_id`, `file_id`),
