@@ -4,6 +4,7 @@ import com.reader.auth.OwnershipGuard;
 import com.reader.common.BusinessException;
 import com.reader.file.FileAsset;
 import com.reader.file.FileAssetMapper;
+import com.reader.file.StorageService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -17,13 +18,16 @@ public class BookshelfService {
 
     private final BookshelfItemMapper bookshelfItemMapper;
     private final FileAssetMapper fileAssetMapper;
+    private final StorageService storageService;
     private final OwnershipGuard ownershipGuard;
 
     public BookshelfService(BookshelfItemMapper bookshelfItemMapper,
                             FileAssetMapper fileAssetMapper,
+                            StorageService storageService,
                             OwnershipGuard ownershipGuard) {
         this.bookshelfItemMapper = bookshelfItemMapper;
         this.fileAssetMapper = fileAssetMapper;
+        this.storageService = storageService;
         this.ownershipGuard = ownershipGuard;
     }
 
@@ -93,10 +97,11 @@ public class BookshelfService {
         BookshelfItem item = getOwnedItem(userId, itemId);
         bookshelfItemMapper.deleteById(itemId);
 
-        // 引用计数 -1，若归零且无其他条目引用则回收物理文件
+        // 引用计数 -1，若归零且无其他条目引用则回收物理文件（对象存储 + 数据库记录）
         fileAssetMapper.decrementRefCount(item.getFileId());
         FileAsset fileAsset = fileAssetMapper.findById(item.getFileId());
         if (fileAsset != null && fileAsset.getRefCount() != null && fileAsset.getRefCount() <= 0) {
+            storageService.delete(fileAsset.getStorageKey());
             fileAssetMapper.deleteById(item.getFileId());
         }
     }

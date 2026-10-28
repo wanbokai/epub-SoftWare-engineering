@@ -2,10 +2,13 @@ package com.reader.file;
 
 import com.reader.config.StorageProperties;
 import org.springframework.stereotype.Service;
+import software.amazon.awssdk.core.ResponseBytes;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.CreateBucketRequest;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
+import software.amazon.awssdk.services.s3.model.GetObjectRequest;
+import software.amazon.awssdk.services.s3.model.GetObjectResponse;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 
 /**
@@ -43,6 +46,18 @@ public class StorageService {
                 .key(storageKey)
                 .build();
         s3Client.deleteObject(request);
+    }
+
+    /**
+     * 从对象存储下载文件字节。
+     */
+    public byte[] download(String storageKey) {
+        GetObjectRequest request = GetObjectRequest.builder()
+                .bucket(properties.getBucket())
+                .key(storageKey)
+                .build();
+        ResponseBytes<GetObjectResponse> bytes = s3Client.getObjectAsBytes(request);
+        return bytes.asByteArray();
     }
 
     /**
