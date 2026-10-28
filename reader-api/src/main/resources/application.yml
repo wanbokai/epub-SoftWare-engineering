@@ -33,8 +33,8 @@ jwt:
 storage:
   endpoint: http://localhost:8333
   region: us-east-1
-  access-key: any_access_key_id
-  secret-key: any_secret_access_key
+  access-key: reader-access-key
+  secret-key: reader-secret-key-0055
   bucket: reader-books
 
 logging:
