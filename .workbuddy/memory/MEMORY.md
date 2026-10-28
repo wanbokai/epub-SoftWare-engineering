@@ -41,3 +41,10 @@
 - 为此新增 `WebConfig.java`（SPA 路由 forward 到 index.html）+ SecurityConfig 放行静态资源与 `/login` `/register` `/settings` `/reader/**`。
 - 打包前须先 taskkill 占用 8080 的 java 进程，否则 `mvn clean` 删不掉旧 jar。
 - 公网访问：cloudflared Quick Tunnel，命令 `cloudflared tunnel --url http://localhost:8080`，免域名免授权，生成 `*.trycloudflare.com` 链接（每次重启会变）。电脑须保持开机。
+
+## 工作目录已改名 + 一键启动脚本（重要）
+- **工作目录已从 `E:\software-阅读器` 改名为 `E:\software-reader`**（英文，避免中文路径编码坑）。
+- 一键启动脚本在 `bin/scripts/`：`启动阅读器.bat`（双击启动三件套）、`查看公网链接.bat`（双击看当前链接，自动复制到剪贴板）。
+- 开机自启：`autostart.bat` 已复制到 Windows 启动文件夹（Startup 里的「云端阅读器自启动.bat」），开机自动静默启动。
+- 脚本核心：`start-reader.ps1` 依次启动 SeaweedFS(19333/18080/8333) → 后端(8080) → cloudflared 隧道。
+- **踩坑**：环境有 HTTP_PROXY/http_proxy 大小写重复（WorkBuddy 注入的 49704 代理），会让 PowerShell 5.1 Start-Process 抛「已添加相同键」异常，脚本开头已清理小写变体。
