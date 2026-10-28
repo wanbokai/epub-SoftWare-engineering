@@ -1,0 +1,1 @@
+import{r as e}from"./index-COg2uZIi.js";var t={add(t){return e({url:`/bookshelf`,method:`POST`,data:t})},list(t){return e({url:`/bookshelf`,method:`GET`,params:t?{keyword:t}:void 0})},rename(t,n){return e({url:`/bookshelf/${t}`,method:`PUT`,data:n})},remove(t){return e({url:`/bookshelf/${t}`,method:`DELETE`})}};export{t};

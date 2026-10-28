@@ -35,3 +35,9 @@
 - 类型定义全部对齐后端 DTO，集中在 src/types/api.ts。
 - TS6 已弃用 baseUrl，路径别名用 `"paths":{"@/*":["./src/*"]}`（不配 baseUrl）。
 - 前端本地内存还存了用户偏好：登录态用 localStorage（reader_access_token / reader_refresh_token）。
+
+## 单端口部署 + 公网访问（重要）
+- 前端已打包进后端：`npm run build` 后复制 `dist/*` 到 `reader-api/src/main/resources/static/`，后端单端口 8080 同时提供网页+接口，无需再跑 Vite。
+- 为此新增 `WebConfig.java`（SPA 路由 forward 到 index.html）+ SecurityConfig 放行静态资源与 `/login` `/register` `/settings` `/reader/**`。
+- 打包前须先 taskkill 占用 8080 的 java 进程，否则 `mvn clean` 删不掉旧 jar。
+- 公网访问：cloudflared Quick Tunnel，命令 `cloudflared tunnel --url http://localhost:8080`，免域名免授权，生成 `*.trycloudflare.com` 链接（每次重启会变）。电脑须保持开机。

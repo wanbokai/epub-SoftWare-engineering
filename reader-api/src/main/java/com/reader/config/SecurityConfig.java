@@ -38,7 +38,10 @@ public class SecurityConfig {
                 .csrf(csrf -> csrf.disable())
                 .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
+                        // 认证接口与健康检查放行
                         .requestMatchers("/api/auth/register", "/api/auth/login", "/api/auth/refresh", "/health").permitAll()
+                        // 前端静态资源与 SPA 页面路由放行（其余 /api/** 仍需鉴权）
+                        .requestMatchers("/", "/index.html", "/favicon.svg", "/assets/**", "/login", "/register", "/settings", "/reader/**").permitAll()
                         .anyRequest().authenticated())
                 .exceptionHandling(eh -> eh.authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)))
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
