@@ -26,4 +26,12 @@
 - 已完成：M3 书架模块（入架/列表检索/重命名/移除 + 引用计数回收），冒烟测试通过。
 - 已完成：M4 同步模块（进度/配置乐观锁上行 + 409冲突检测 + 下行拉取 + 冲突消解），冒烟测试通过。
 - 已完成：M5 解析引擎（后端 Java 版：TXT 编码识别+正则分章、EPUB 解压+OPF/NCX 解析，输出统一书对象 Book），冒烟测试通过。
-- 待做：前端 Vue 项目。
+- 已完成：前端 Vue3 项目（reader-web/，Vite8 + Vue3 + TS + Pinia + Vue Router + Axios），含登录/注册、书架（搜索/重命名/移除/上传秒传预检）、阅读器（章节渲染/目录/排版配置/进度上报/409冲突消解）、设置页，`npm run build` 通过并推送 GitHub（commit c7a1e89）。
+
+## 前端关键约定（reader-web）
+- 开发端口 5173，`/api` 经 vite.config.ts 代理转发到后端 8080。
+- 统一响应 `ApiResponse{code,message,data}`，http.ts 里 `request<T>()` 解包 code!=0 抛错，401 自动 refresh token 换新。
+- 后端接口路径：auth(/api/auth)、files(/api/files)、bookshelf(/api/bookshelf)、sync(/api/v1/sync)、parser(/api/parser)。
+- 类型定义全部对齐后端 DTO，集中在 src/types/api.ts。
+- TS6 已弃用 baseUrl，路径别名用 `"paths":{"@/*":["./src/*"]}`（不配 baseUrl）。
+- 前端本地内存还存了用户偏好：登录态用 localStorage（reader_access_token / reader_refresh_token）。
