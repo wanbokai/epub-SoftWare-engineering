@@ -36,6 +36,14 @@ export function parseCfi(cfi: string | null | undefined): number {
 }
 
 /**
+ * 判断是否为当前版本写入的锚点（带 `!` 的 CFI 结构）。
+ * 旧版本只写章节号、且进度百分比按整章估算，不能用来还原章内位置。
+ */
+export function isModernCfi(cfi: string | null | undefined): boolean {
+  return !!cfi && /^epubcfi\(\/6\/\d+!/.test(cfi)
+}
+
+/**
  * 由全书百分比反推"章内位置"（0~1），用于恢复阅读位置。
  *
  * @param percent      全书进度百分比（0~100）

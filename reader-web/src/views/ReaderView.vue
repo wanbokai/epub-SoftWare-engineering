@@ -5,7 +5,7 @@ import { useReaderStore } from '@/stores/reader'
 import { bookshelfApi } from '@/api/bookshelf'
 import { parserApi } from '@/api/parser'
 import { syncApi } from '@/api/sync'
-import { buildCfi, parseCfi, intraFromPercent, percentOf } from '@/utils/locator'
+import { buildCfi, parseCfi, intraFromPercent, isModernCfi, percentOf } from '@/utils/locator'
 import {
   deletePendingProgress,
   enqueueProgress,
@@ -173,11 +173,10 @@ async function restorePosition() {
   const maxIndex = Math.max(0, book.value.chapters.length - 1)
   currentIndex.value = Math.min(Math.max(parsed >= 0 ? parsed : 0, 0), maxIndex)
 
-  const target = intraFromPercent(
-    item.value?.progressPercent,
-    currentIndex.value,
-    book.value.chapters.length,
-  )
+  // 旧数据只有粗粒度百分比，不能还原章内位置，直接停在章首。
+  const target = isModernCfi(item.value?.progressCfi)
+    ? intraFromPercent(item.value?.progressPercent, currentIndex.value, book.value.chapters.length)
+    : 0
   await applyIntra(target)
 }
 
@@ -393,11 +392,9 @@ async function resolve(choice: string) {
         const idx = parseCfi(fresh.progressCfi)
         const maxIndex = Math.max(0, book.value.chapters.length - 1)
         currentIndex.value = Math.min(Math.max(idx >= 0 ? idx : 0, 0), maxIndex)
-        const target = intraFromPercent(
-          fresh.progressPercent,
-          currentIndex.value,
-          book.value.chapters.length,
-        )
+        const target = isModernCfi(fresh.progressCfi)
+          ? intraFromPercent(fresh.progressPercent, currentIndex.value, book.value.chapters.length)
+          : 0
         await applyIntra(target)
       }
     }
