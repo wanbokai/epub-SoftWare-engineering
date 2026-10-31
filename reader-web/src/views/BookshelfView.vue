@@ -2,12 +2,15 @@
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import TopBar from '@/components/TopBar.vue'
-import { bookshelfApi } from '@/api/bookshelf'
+import { bookshelfApi, type BookshelfSort } from '@/api/bookshelf'
 import { fileApi } from '@/api/file'
 import { sha256Hex } from '@/utils/sha256'
 import type { BookshelfItem } from '@/types/api'
 
 const router = useRouter()
+
+const VIEW_KEY = 'reader_bookshelf_view'
+const SORT_KEY = 'reader_bookshelf_sort'
 
 const items = ref<BookshelfItem[]>([])
 const keyword = ref('')
@@ -16,10 +19,25 @@ const uploading = ref(false)
 const uploadMsg = ref('')
 const fileInput = ref<HTMLInputElement>()
 
-async function load(keywordStr?: string) {
+// 视图与排序偏好持久化，刷新后保持用户上次选择。
+const viewMode = ref<'grid' | 'list'>(localStorage.getItem(VIEW_KEY) === 'list' ? 'list' : 'grid')
+const sort = ref<BookshelfSort>(
+  (['lastRead', 'created', 'title'] as const).includes(
+    localStorage.getItem(SORT_KEY) as BookshelfSort,
+  )
+    ? (localStorage.getItem(SORT_KEY) as BookshelfSort)
+    : 'lastRead',
+)
+
+// 移除方式二选一：仅移出书架 / 同时删除云端文件。
+const removeTarget = ref<BookshelfItem | null>(null)
+const removeCloudCopy = ref(false)
+const removing = ref(false)
+
+async function load(keywordStr?: string, sortVal?: BookshelfSort) {
   loading.value = true
   try {
-    items.value = await bookshelfApi.list(keywordStr || undefined)
+    items.value = await bookshelfApi.list(keywordStr || undefined, sortVal ?? sort.value)
   } catch (e) {
     alert((e as Error).message || '加载书架失败')
   } finally {
@@ -29,6 +47,17 @@ async function load(keywordStr?: string) {
 
 function onSearch() {
   load(keyword.value.trim())
+}
+
+function setSort(value: BookshelfSort) {
+  sort.value = value
+  localStorage.setItem(SORT_KEY, value)
+  load(keyword.value.trim(), value)
+}
+
+function setView(mode: 'grid' | 'list') {
+  viewMode.value = mode
+  localStorage.setItem(VIEW_KEY, mode)
 }
 
 async function onFileChange(e: Event) {
@@ -83,13 +112,23 @@ async function onRename(item: BookshelfItem) {
   }
 }
 
-async function onRemove(item: BookshelfItem) {
-  if (!confirm(`确定要从书架移除《${item.displayTitle}》吗？`)) return
+function onRemove(item: BookshelfItem) {
+  removeTarget.value = item
+  removeCloudCopy.value = false
+}
+
+async function confirmRemove() {
+  const target = removeTarget.value
+  if (!target) return
+  removing.value = true
   try {
-    await bookshelfApi.remove(item.id)
+    await bookshelfApi.remove(target.id, removeCloudCopy.value)
+    removeTarget.value = null
     await load(keyword.value.trim())
   } catch (e) {
     alert((e as Error).message || '移除失败')
+  } finally {
+    removing.value = false
   }
 }
 
@@ -106,7 +145,18 @@ function formatSize(size: number) {
 
 function formatPercent(p?: number) {
   if (p == null) return ''
-  return `${(Number(p)).toFixed(1)}%`
+  return `${Number(p).toFixed(1)}%`
+}
+
+function formatLastRead(value?: string) {
+  if (!value) return '从未阅读'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return '从未阅读'
+  const month = date.getMonth() + 1
+  const day = date.getDate()
+  const hh = String(date.getHours()).padStart(2, '0')
+  const mm = String(date.getMinutes()).padStart(2, '0')
+  return `${month}月${day}日 ${hh}:${mm}`
 }
 
 onMounted(() => load())
@@ -128,6 +178,37 @@ onMounted(() => load())
           />
           <button class="btn" @click="onSearch">搜索</button>
         </div>
+
+        <select
+          class="input sort"
+          :value="sort"
+          title="排序方式"
+          @change="setSort(($event.target as HTMLSelectElement).value as BookshelfSort)"
+        >
+          <option value="lastRead">最近阅读</option>
+          <option value="created">导入时间</option>
+          <option value="title">书名</option>
+        </select>
+
+        <div class="view-toggle">
+          <button
+            class="view-btn"
+            :class="{ active: viewMode === 'grid' }"
+            title="网格视图"
+            @click="setView('grid')"
+          >
+            ▦
+          </button>
+          <button
+            class="view-btn"
+            :class="{ active: viewMode === 'list' }"
+            title="列表视图"
+            @click="setView('list')"
+          >
+            ☰
+          </button>
+        </div>
+
         <button class="btn btn-primary" :disabled="uploading" @click="fileInput?.click()">
           {{ uploading ? uploadMsg || '上传中…' : '＋ 导入图书' }}
         </button>
@@ -148,7 +229,7 @@ onMounted(() => load())
         书架空空如也，点击右上角「导入图书」开始阅读
       </div>
 
-      <div v-else class="grid">
+      <div v-else-if="viewMode === 'grid'" class="grid">
         <div v-for="item in items" :key="item.id" class="card book">
           <div class="cover" :class="item.fileType === 1 ? 'epub' : 'txt'">
             <span>{{ item.fileType === 1 ? 'EPUB' : 'TXT' }}</span>
@@ -164,6 +245,32 @@ onMounted(() => load())
               </div>
               <span class="text-sub">{{ formatPercent(item.progressPercent) || '未读' }}</span>
             </div>
+            <div class="last-read text-sub">{{ formatLastRead(item.lastReadAt) }}</div>
+          </div>
+          <div class="actions">
+            <button class="btn" @click="onRename(item)">重命名</button>
+            <button class="btn btn-danger" @click="onRemove(item)">移除</button>
+          </div>
+        </div>
+      </div>
+
+      <div v-else class="list">
+        <div v-for="item in items" :key="item.id" class="card row">
+          <div class="cover small" :class="item.fileType === 1 ? 'epub' : 'txt'">
+            <span>{{ item.fileType === 1 ? 'EPUB' : 'TXT' }}</span>
+          </div>
+          <div class="row-main" @click="openReader(item)">
+            <div class="title">{{ item.displayTitle }}</div>
+            <div class="meta text-sub">
+              {{ item.metaAuthor || '未知作者' }} · {{ formatSize(item.fileSize) }} ·
+              {{ formatLastRead(item.lastReadAt) }}
+            </div>
+          </div>
+          <div class="row-progress">
+            <div class="bar">
+              <div class="bar-fill" :style="{ width: formatPercent(item.progressPercent) || '0%' }" />
+            </div>
+            <span class="text-sub">{{ formatPercent(item.progressPercent) || '未读' }}</span>
           </div>
           <div class="actions">
             <button class="btn" @click="onRename(item)">重命名</button>
@@ -172,6 +279,28 @@ onMounted(() => load())
         </div>
       </div>
     </main>
+
+    <!-- 移除方式选择 -->
+    <div v-if="removeTarget" class="modal">
+      <div class="card modal-card">
+        <h3>移除《{{ removeTarget.displayTitle }}》</h3>
+        <p class="text-sub">请选择移除方式：</p>
+        <label class="radio">
+          <input v-model="removeCloudCopy" type="radio" :value="false" />
+          仅移出我的书架（保留云端文件）
+        </label>
+        <label class="radio">
+          <input v-model="removeCloudCopy" type="radio" :value="true" />
+          同时删除云端文件副本（无其他引用时回收）
+        </label>
+        <div class="modal-actions">
+          <button class="btn" :disabled="removing" @click="removeTarget = null">取消</button>
+          <button class="btn btn-danger" :disabled="removing" @click="confirmRemove">
+            {{ removing ? '移除中…' : '确认移除' }}
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -191,16 +320,44 @@ onMounted(() => load())
   align-items: center;
   gap: 12px;
   margin-bottom: 16px;
+  flex-wrap: wrap;
 }
 
 .search {
   display: flex;
   gap: 8px;
   flex: 1;
+  min-width: 220px;
 }
 
 .search .input {
   max-width: 360px;
+}
+
+.sort {
+  width: auto;
+  padding: 8px 10px;
+}
+
+.view-toggle {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--surface);
+}
+
+.view-btn {
+  border: none;
+  background: transparent;
+  color: var(--text-sub);
+  padding: 6px 12px;
+  font-size: 15px;
+}
+
+.view-btn.active {
+  background: var(--primary);
+  color: #fff;
 }
 
 .upload-msg {
@@ -224,6 +381,7 @@ onMounted(() => load())
   display: flex;
   flex-direction: column;
   gap: 12px;
+  background: var(--surface);
 }
 
 .cover {
@@ -235,6 +393,14 @@ onMounted(() => load())
   color: #fff;
   font-weight: 700;
   letter-spacing: 2px;
+}
+
+.cover.small {
+  width: 64px;
+  height: 48px;
+  font-size: 11px;
+  letter-spacing: 1px;
+  flex-shrink: 0;
 }
 
 .cover.epub {
@@ -270,6 +436,11 @@ onMounted(() => load())
   gap: 8px;
 }
 
+.last-read {
+  font-size: 12px;
+  margin-top: 6px;
+}
+
 .bar {
   flex: 1;
   height: 6px;
@@ -294,5 +465,95 @@ onMounted(() => load())
   display: flex;
   gap: 8px;
   justify-content: flex-end;
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 16px;
+  background: var(--surface);
+}
+
+.row-main {
+  flex: 1;
+  min-width: 0;
+  cursor: pointer;
+}
+
+.row-main .title {
+  margin-bottom: 2px;
+}
+
+.row-main .meta {
+  margin-bottom: 0;
+}
+
+.row-progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 220px;
+  flex-shrink: 0;
+}
+
+.row-progress span {
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 30;
+}
+
+.modal-card {
+  width: 420px;
+  max-width: 92%;
+  background: var(--surface);
+  color: var(--text);
+}
+
+.modal-card h3 {
+  margin: 0 0 8px;
+  font-size: 18px;
+}
+
+.radio {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 0;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+@media (max-width: 720px) {
+  .row {
+    flex-wrap: wrap;
+  }
+
+  .row-progress {
+    width: 100%;
+    order: 3;
+  }
 }
 </style>

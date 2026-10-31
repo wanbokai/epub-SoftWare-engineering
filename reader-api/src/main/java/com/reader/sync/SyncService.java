@@ -98,7 +98,7 @@ public class SyncService {
      */
     public SyncPullResponse pull(Long userId) {
         SyncPullResponse response = new SyncPullResponse();
-        response.setProgressList(bookshelfItemMapper.listByUser(userId, null));
+        response.setProgressList(bookshelfItemMapper.listByUser(userId, null, "lastRead"));
         response.setConfig(readerConfigMapper.findByUserId(userId));
         return response;
     }

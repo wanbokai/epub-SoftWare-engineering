@@ -69,10 +69,13 @@ public class BookshelfService {
     }
 
     /**
-     * 列出当前用户书架，支持关键词检索，按最近阅读时间倒序。
+     * 列出当前用户书架，支持关键词检索（书名/元数据书名/作者），按指定方式排序。
+     *
+     * @param sort lastRead（最近阅读，默认）/ created（导入时间）/ title（书名）
      */
-    public List<BookshelfItem> list(Long userId, String keyword) {
-        return bookshelfItemMapper.listByUser(userId, keyword);
+    public List<BookshelfItem> list(Long userId, String keyword, String sort) {
+        String normalized = ("created".equals(sort) || "title".equals(sort)) ? sort : "lastRead";
+        return bookshelfItemMapper.listByUser(userId, keyword, normalized);
     }
 
     /**
@@ -90,15 +93,24 @@ public class BookshelfService {
     }
 
     /**
-     * 移除书架条目：引用计数 -1，归零时回收物理文件（对象存储 + 数据库记录）。
+     * 移除书架条目：引用计数 -1。
+     * <p>
+     * 仅当 {@code removeCloudCopy=true} 且引用计数归零时，才回收对象存储中的物理文件与 file_asset 记录；
+     * 否则只把书从个人书架移出，物理文件继续保留（可被其他用户秒传复用）。
+     *
+     * @param removeCloudCopy 是否同时删除云端文件副本
      */
     @Transactional
-    public void remove(Long userId, Long itemId) {
+    public void remove(Long userId, Long itemId, boolean removeCloudCopy) {
         BookshelfItem item = getOwnedItem(userId, itemId);
         bookshelfItemMapper.deleteById(itemId);
 
-        // 引用计数 -1，若归零且无其他条目引用则回收物理文件（对象存储 + 数据库记录）
         fileAssetMapper.decrementRefCount(item.getFileId());
+        if (!removeCloudCopy) {
+            return;
+        }
+
+        // 引用计数 -1 后归零且确实没有条目引用时，回收物理文件（对象存储 + 数据库记录）
         FileAsset fileAsset = fileAssetMapper.findById(item.getFileId());
         if (fileAsset != null && fileAsset.getRefCount() != null && fileAsset.getRefCount() <= 0) {
             storageService.delete(fileAsset.getStorageKey());

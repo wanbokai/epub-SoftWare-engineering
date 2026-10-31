@@ -17,7 +17,14 @@ public interface BookshelfItemMapper {
 
     BookshelfItem findByUserAndFile(@Param("userId") Long userId, @Param("fileId") Long fileId);
 
-    List<BookshelfItem> listByUser(@Param("userId") Long userId, @Param("keyword") String keyword);
+    /**
+     * 列出用户书架。
+     *
+     * @param sort 排序方式：lastRead（最近阅读）/ created（导入时间）/ title（书名）
+     */
+    List<BookshelfItem> listByUser(@Param("userId") Long userId,
+                                   @Param("keyword") String keyword,
+                                   @Param("sort") String sort);
 
     int update(BookshelfItem item);
 

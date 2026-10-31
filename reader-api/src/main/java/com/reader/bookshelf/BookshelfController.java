@@ -39,12 +39,16 @@ public class BookshelfController {
     }
 
     /**
-     * 列出书架（可选 keyword 检索）。
+     * 列出书架（可选 keyword 检索、sort 排序）。
+     *
+     * @param sort lastRead（最近阅读，默认）/ created（导入时间）/ title（书名）
      */
     @GetMapping
-    public ApiResponse<List<BookshelfItem>> list(@RequestParam(value = "keyword", required = false) String keyword) {
+    public ApiResponse<List<BookshelfItem>> list(
+            @RequestParam(value = "keyword", required = false) String keyword,
+            @RequestParam(value = "sort", required = false, defaultValue = "lastRead") String sort) {
         Long userId = ownershipGuard.requireCurrentUserId();
-        return ApiResponse.ok(bookshelfService.list(userId, keyword));
+        return ApiResponse.ok(bookshelfService.list(userId, keyword, sort));
     }
 
     /**
@@ -58,12 +62,16 @@ public class BookshelfController {
     }
 
     /**
-     * 移除书架条目（含引用计数回收）。
+     * 移除书架条目（可选同时删除云端文件副本）。
+     *
+     * @param removeCloudCopy true=引用计数归零时回收物理文件；false=仅移出个人书架
      */
     @DeleteMapping("/{itemId}")
-    public ApiResponse<Void> remove(@PathVariable("itemId") Long itemId) {
+    public ApiResponse<Void> remove(
+            @PathVariable("itemId") Long itemId,
+            @RequestParam(value = "removeCloudCopy", required = false, defaultValue = "false") boolean removeCloudCopy) {
         Long userId = ownershipGuard.requireCurrentUserId();
-        bookshelfService.remove(userId, itemId);
+        bookshelfService.remove(userId, itemId, removeCloudCopy);
         return ApiResponse.ok();
     }
 }

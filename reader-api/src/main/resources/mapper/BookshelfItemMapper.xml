@@ -47,9 +47,21 @@
         LEFT JOIN file_asset f ON b.file_id = f.id
         WHERE b.user_id = #{userId}
         <if test="keyword != null and keyword != ''">
-            AND b.display_title LIKE CONCAT('%', #{keyword}, '%')
+            AND (b.display_title LIKE CONCAT('%', #{keyword}, '%')
+                 OR f.meta_title LIKE CONCAT('%', #{keyword}, '%')
+                 OR f.meta_author LIKE CONCAT('%', #{keyword}, '%'))
         </if>
-        ORDER BY b.last_read_at DESC, b.created_at DESC
+        <choose>
+            <when test="sort == 'created'">
+                ORDER BY b.created_at DESC, b.id DESC
+            </when>
+            <when test="sort == 'title'">
+                ORDER BY b.display_title ASC, b.id ASC
+            </when>
+            <otherwise>
+                ORDER BY b.last_read_at IS NULL, b.last_read_at DESC, b.created_at DESC
+            </otherwise>
+        </choose>
     </select>
 
     <update id="update" parameterType="com.reader.bookshelf.BookshelfItem">
