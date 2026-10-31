@@ -59,7 +59,8 @@ public class FileController {
             throw new BusinessException(400, "SHA-256 校验不一致");
         }
 
-        FileAsset asset = fileService.upload(sha256, content, fileType, file.getContentType());
+        FileAsset asset = fileService.upload(sha256, content, fileType, file.getContentType(),
+                file.getOriginalFilename());
         return ApiResponse.ok(asset);
     }
 }

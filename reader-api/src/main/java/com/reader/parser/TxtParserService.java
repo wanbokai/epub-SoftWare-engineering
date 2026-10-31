@@ -35,6 +35,15 @@ public class TxtParserService {
     }
 
     /**
+     * 只取元数据：TXT 本身没有作者信息，书名取展示名。
+     */
+    public Book.BookMeta extractMeta(String title) {
+        Book.BookMeta meta = new Book.BookMeta();
+        meta.setTitle(title != null && !title.isBlank() ? title : "未命名书籍");
+        return meta;
+    }
+
+    /**
      * 编码探测并解码为 UTF-8 字符串。
      */
     public String decode(byte[] content) throws IOException {
@@ -149,6 +158,7 @@ public class TxtParserService {
             root.setTitle("正文");
             root.setHref("1");
             root.setLevel(1);
+            root.setChapterIndex(0);
             book.getToc().add(root);
             return book;
         }
@@ -163,6 +173,14 @@ public class TxtParserService {
                 preface.setContent(prefix);
                 book.getChapters().add(preface);
                 book.getSpine().add("0");
+
+                // 前言也要进目录，否则目录下标会整体错位一章
+                Book.TocItem prefaceToc = new Book.TocItem();
+                prefaceToc.setTitle("前言");
+                prefaceToc.setHref("0");
+                prefaceToc.setLevel(1);
+                prefaceToc.setChapterIndex(0);
+                book.getToc().add(prefaceToc);
             }
         }
 
@@ -170,11 +188,13 @@ public class TxtParserService {
         for (int c = 0; c < chapterStarts.size(); c++) {
             int start = chapterStarts.get(c);
             int end = (c + 1 < chapterStarts.size()) ? chapterStarts.get(c + 1) : lines.length;
+            int chapterIndex = book.getChapters().size();
 
             Book.Chapter chapter = new Book.Chapter();
             chapter.setId(String.valueOf(c + 1));
             chapter.setTitle(chapterTitles.get(c));
-            chapter.setContent(joinRange(lines, start, end));
+            // 标题行单独由阅读器渲染，正文从标题下一行开始，避免重复显示
+            chapter.setContent(joinRange(lines, start + 1, end));
             book.getChapters().add(chapter);
             book.getSpine().add(String.valueOf(c + 1));
 
@@ -182,6 +202,7 @@ public class TxtParserService {
             tocItem.setTitle(chapterTitles.get(c));
             tocItem.setHref(String.valueOf(c + 1));
             tocItem.setLevel(1);
+            tocItem.setChapterIndex(chapterIndex);
             book.getToc().add(tocItem);
         }
 

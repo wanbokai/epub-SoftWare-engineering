@@ -32,12 +32,19 @@
         VALUES (#{sha256}, #{storageKey}, #{fileType}, #{fileSize}, #{metaTitle}, #{metaAuthor}, 0, NOW())
     </insert>
 
+    <update id="updateMeta">
+        UPDATE file_asset
+        SET meta_title = #{metaTitle},
+            meta_author = #{metaAuthor}
+        WHERE id = #{id}
+    </update>
+
     <update id="incrementRefCount">
         UPDATE file_asset SET ref_count = ref_count + 1 WHERE id = #{id}
     </update>
 
     <update id="decrementRefCount">
-        UPDATE file_asset SET ref_count = ref_count - 1 WHERE id = #{id}
+        UPDATE file_asset SET ref_count = ref_count - 1 WHERE id = #{id} AND ref_count &gt; 0
     </update>
 
     <delete id="deleteById">

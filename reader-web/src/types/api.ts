@@ -158,6 +158,8 @@ export interface TocItem {
   title: string
   href: string
   level: number
+  /** 对应 chapters 的下标；目录与章节非 1:1 时以它为准 */
+  chapterIndex?: number | null
   children: TocItem[]
 }
 

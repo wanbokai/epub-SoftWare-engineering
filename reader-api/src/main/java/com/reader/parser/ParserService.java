@@ -43,9 +43,20 @@ public class ParserService {
     }
 
     /**
-     * 仅抽取元数据（书名/作者），供秒传预检时复用。
+     * 仅抽取元数据（书名/作者），供上传登记与秒传预检复用。
+     * <p>
+     * 不解析章节正文，EPUB 只读 container.xml + OPF，避免为拿书名付出整本解析的代价。
      */
     public Book.BookMeta extractMeta(byte[] content, int fileType, String title) {
-        return parse(content, fileType, title).getMeta();
+        try {
+            if (fileType == 1) {
+                return epubParserService.extractMeta(content);
+            } else if (fileType == 2) {
+                return txtParserService.extractMeta(title);
+            }
+            throw new BusinessException(400, "不支持的文件类型（1=EPUB, 2=TXT）");
+        } catch (IOException e) {
+            throw new BusinessException(400, "文件解析失败：" + e.getMessage());
+        }
     }
 }

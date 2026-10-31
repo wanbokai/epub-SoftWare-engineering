@@ -541,8 +541,8 @@ onUnmounted(() => {
           v-for="(t, i) in book?.toc ?? []"
           :key="i"
           class="toc-item"
-          :class="{ active: i === currentIndex }"
-          @click="gotoChapter(i)"
+          :class="{ active: (t.chapterIndex ?? i) === currentIndex }"
+          @click="gotoChapter(t.chapterIndex ?? i)"
         >
           {{ t.title }}
         </div>

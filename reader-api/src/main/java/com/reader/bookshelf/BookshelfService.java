@@ -110,11 +110,12 @@ public class BookshelfService {
             return;
         }
 
-        // 引用计数 -1 后归零且确实没有条目引用时，回收物理文件（对象存储 + 数据库记录）
+        // 引用计数 -1 后归零且确实没有条目引用时，回收物理文件。
+        // 先删数据库行再删对象：对象删除失败会回滚事务，避免“库里有记录、对象已丢失”。
         FileAsset fileAsset = fileAssetMapper.findById(item.getFileId());
         if (fileAsset != null && fileAsset.getRefCount() != null && fileAsset.getRefCount() <= 0) {
-            storageService.delete(fileAsset.getStorageKey());
             fileAssetMapper.deleteById(item.getFileId());
+            storageService.delete(fileAsset.getStorageKey());
         }
     }
 

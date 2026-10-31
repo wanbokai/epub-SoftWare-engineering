@@ -92,7 +92,120 @@ public class EpubParserService {
         book.setChapters(chapters);
         book.setSpine(spineHrefs);
 
+        // 5. 目录项回填章节下标：目录与 spine 不一定 1:1，前端不能按下标硬套
+        assignTocChapterIndexes(toc, chapters);
+
         return book;
+    }
+
+    /**
+     * 只抽取元数据（书名/作者），不解析章节正文，供上传登记与秒传预检复用。
+     */
+    public Book.BookMeta extractMeta(byte[] content) throws IOException {
+        String opfPath = findOpfPathFromStream(content);
+        if (opfPath == null) {
+            throw new IOException("EPUB 无效：缺少 container.xml 或 OPF 路径");
+        }
+        byte[] opfBytes = readEntry(content, normalizePath(opfPath));
+        if (opfBytes == null) {
+            throw new IOException("EPUB 无效：找不到 OPF 文件 " + opfPath);
+        }
+        return parseMeta(parseXml(opfBytes));
+    }
+
+    /**
+     * 扫描 ZIP 流读取 container.xml 并解析出 OPF 路径（不加载章节内容）。
+     */
+    private String findOpfPathFromStream(byte[] content) throws IOException {
+        try (ZipInputStream zis = new ZipInputStream(new ByteArrayInputStream(content))) {
+            ZipEntry entry;
+            while ((entry = zis.getNextEntry()) != null) {
+                if (CONTAINER_PATH.equals(normalizePath(entry.getName()))) {
+                    return findOpfPathFromContainer(readAll(zis));
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * 从 container.xml 字节中取第一个 rootfile 的 full-path。
+     */
+    private String findOpfPathFromContainer(byte[] container) {
+        try {
+            Document doc = parseXml(container);
+            NodeList rootfiles = doc.getElementsByTagName("rootfile");
+            if (rootfiles.getLength() > 0) {
+                String fullPath = ((Element) rootfiles.item(0)).getAttribute("full-path");
+                if (fullPath != null && !fullPath.isBlank()) {
+                    return fullPath;
+                }
+            }
+        } catch (Exception ignored) {
+            // 交给调用方按“无 OPF”处理
+        }
+        return null;
+    }
+
+    /**
+     * 重新扫描 ZIP，只取出指定路径的条目内容。
+     */
+    private byte[] readEntry(byte[] content, String entryName) throws IOException {
+        try (ZipInputStream zis = new ZipInputStream(new ByteArrayInputStream(content))) {
+            ZipEntry entry;
+            while ((entry = zis.getNextEntry()) != null) {
+                if (entryName.equals(normalizePath(entry.getName()))) {
+                    return readAll(zis);
+                }
+            }
+        }
+        return null;
+    }
+
+    private byte[] readAll(InputStream in) throws IOException {
+        ByteArrayOutputStream bos = new ByteArrayOutputStream();
+        byte[] buf = new byte[8192];
+        int n;
+        while ((n = in.read(buf)) != -1) {
+            bos.write(buf, 0, n);
+        }
+        return bos.toByteArray();
+    }
+
+    /**
+     * 递归为目录项找到对应的章节下标；找不到则保持 null（前端回退为目录下标）。
+     */
+    private void assignTocChapterIndexes(java.util.List<Book.TocItem> toc,
+                                         java.util.List<Book.Chapter> chapters) {
+        for (Book.TocItem item : toc) {
+            item.setChapterIndex(findChapterIndex(chapters, item.getHref()));
+            if (!item.getChildren().isEmpty()) {
+                assignTocChapterIndexes(item.getChildren(), chapters);
+            }
+        }
+    }
+
+    /**
+     * 用与章节标题相同的前后缀匹配规则，把目录 href 映射到 chapters 下标。
+     */
+    private Integer findChapterIndex(java.util.List<Book.Chapter> chapters, String href) {
+        if (href == null || href.isBlank()) {
+            return null;
+        }
+        String path = normalizePath(href.split("#")[0]);
+        if (path.isBlank()) {
+            return null;
+        }
+        for (int i = 0; i < chapters.size(); i++) {
+            String id = chapters.get(i).getId();
+            if (id == null) {
+                continue;
+            }
+            if (id.equals(path) || id.endsWith("/" + path) || path.endsWith("/" + id)) {
+                return i;
+            }
+        }
+        return null;
     }
 
     /**

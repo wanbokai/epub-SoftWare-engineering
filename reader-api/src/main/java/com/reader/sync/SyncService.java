@@ -119,29 +119,58 @@ public class SyncService {
             case "cloud":
                 // 保留云端：仅推进版本号，不改变内容
                 return bumpVersion(item);
-            case "local":
+            case "local": {
                 // 采用本机：用本端进度覆盖，版本 +1
                 if (request.getCfi() == null && request.getPercent() == null) {
                     throw new BusinessException(400, "采用本机需携带本端进度");
                 }
-                bookshelfItemMapper.updateProgressWithVersion(
-                        itemId, request.getCfi(), request.getPercent(), item.getSyncVersion());
+                String cfi = request.getCfi() != null ? request.getCfi() : item.getProgressCfi();
+                BigDecimal percent = request.getPercent() != null
+                        ? request.getPercent() : item.getProgressPercent();
+                applyProgress(item, cfi, percent);
                 return item.getSyncVersion() + 1;
-            case "lww":
-                // 最后写入胜：本端携带进度则覆盖（本端已是最新）
-                if (request.getCfi() != null || request.getPercent() != null) {
-                    bookshelfItemMapper.updateProgressWithVersion(
-                            itemId, request.getCfi(), request.getPercent(), item.getSyncVersion());
+            }
+            case "lww": {
+                // 最后写入胜：本端携带进度则覆盖；未携带则只推进版本
+                if (request.getCfi() == null && request.getPercent() == null) {
+                    return bumpVersion(item);
                 }
+                String cfi = request.getCfi() != null ? request.getCfi() : item.getProgressCfi();
+                BigDecimal percent = request.getPercent() != null
+                        ? request.getPercent() : item.getProgressPercent();
+                applyProgress(item, cfi, percent);
                 return item.getSyncVersion() + 1;
+            }
             default:
                 throw new BusinessException(400, "非法的消解选项（cloud/local/lww）");
         }
     }
 
+    /**
+     * 按乐观锁写入进度；版本已被其他端推进时返回 409 冲突，而不是假装成功。
+     */
+    private void applyProgress(BookshelfItem item, String cfi, BigDecimal percent) {
+        int updated = bookshelfItemMapper.updateProgressWithVersion(
+                item.getId(), cfi, percent, item.getSyncVersion());
+        if (updated == 0) {
+            BookshelfItem cloud = bookshelfItemMapper.findById(item.getId());
+            throw new SyncConflictException(new ConflictResponse(
+                    new ConflictResponse.ProgressSummary(cloud.getProgressCfi(), cloud.getProgressPercent()),
+                    new ConflictResponse.ProgressSummary(cfi, percent),
+                    cloud.getSyncVersion(), item.getSyncVersion()));
+        }
+    }
+
     private int bumpVersion(BookshelfItem item) {
-        bookshelfItemMapper.updateProgressWithVersion(
+        int updated = bookshelfItemMapper.updateProgressWithVersion(
                 item.getId(), item.getProgressCfi(), item.getProgressPercent(), item.getSyncVersion());
+        if (updated == 0) {
+            BookshelfItem cloud = bookshelfItemMapper.findById(item.getId());
+            throw new SyncConflictException(new ConflictResponse(
+                    new ConflictResponse.ProgressSummary(cloud.getProgressCfi(), cloud.getProgressPercent()),
+                    new ConflictResponse.ProgressSummary(item.getProgressCfi(), item.getProgressPercent()),
+                    cloud.getSyncVersion(), item.getSyncVersion()));
+        }
         return item.getSyncVersion() + 1;
     }
 

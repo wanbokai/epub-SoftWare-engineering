@@ -15,6 +15,13 @@ public interface FileAssetMapper {
 
     int insert(FileAsset fileAsset);
 
+    /**
+     * 补写/更新元数据（书名、作者）。
+     */
+    int updateMeta(@Param("id") Long id,
+                   @Param("metaTitle") String metaTitle,
+                   @Param("metaAuthor") String metaAuthor);
+
     int incrementRefCount(@Param("id") Long id);
 
     int decrementRefCount(@Param("id") Long id);

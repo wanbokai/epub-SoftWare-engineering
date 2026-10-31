@@ -121,6 +121,12 @@ public class Book {
         private String title;
         private String href;     // 定位目标（EPUB 为资源锚点，TXT 为章节号）
         private int level;       // 层级（1 为顶级）
+        /**
+         * 该目录项对应的章节下标（与 {@code chapters} 列表对齐）。
+         * 目录项与章节并非总是 1:1（TXT 前言、EPUB 一个文件多个锚点），
+         * 前端不能再用目录数组下标直接当章节下标。
+         */
+        private Integer chapterIndex;
         private List<TocItem> children = new ArrayList<>();
 
         public String getTitle() {
@@ -145,6 +151,14 @@ public class Book {
 
         public void setLevel(int level) {
             this.level = level;
+        }
+
+        public Integer getChapterIndex() {
+            return chapterIndex;
+        }
+
+        public void setChapterIndex(Integer chapterIndex) {
+            this.chapterIndex = chapterIndex;
         }
 
         public List<TocItem> getChildren() {
