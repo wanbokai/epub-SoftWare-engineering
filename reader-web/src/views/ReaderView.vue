@@ -131,8 +131,8 @@ const readerStyle = computed(() => {
   const c = store.config
   const palette = themeOf(c.theme)
   const marginMap: Record<number, string> = { 1: '8px', 2: '24px', 3: '48px' }
-  // 流式模式的正文宽度按浏览器视口比例：窄 3/4、中 2/3、宽 1/3
-  const flowWidthMap: Record<number, string> = { 1: '75vw', 2: '66.67vw', 3: '33.33vw' }
+  // 流式模式的正文宽度按浏览器视口比例：窄 3/4、中 1/2、宽 1/3
+  const flowWidthMap: Record<number, string> = { 1: '75vw', 2: '50vw', 3: '33.33vw' }
   // 分页模式仍用像素宽（由页宽计算控制）
   const maxWidthMap: Record<number, string> = { 1: '740px', 2: '700px', 3: '640px' }
   return {
@@ -141,7 +141,7 @@ const readerStyle = computed(() => {
     fontSize: `${c.fontSize}px`,
     lineHeight: String(c.lineHeight),
     padding: `24px ${marginMap[c.pageMargin] ?? '24px'}`,
-    '--reader-flow-width': flowWidthMap[c.pageMargin] ?? '66.67%',
+    '--reader-flow-width': flowWidthMap[c.pageMargin] ?? '50vw',
     '--reader-max-width': maxWidthMap[c.pageMargin] ?? '700px',
   }
 })
@@ -859,9 +859,9 @@ onUnmounted(() => {
   overflow-wrap: break-word;
 }
 
-/* 流式模式：正文宽度按浏览器界面比例铺开（3/4、2/3、1/3），并保留最小可读宽度 */
+/* 流式模式：正文宽度按浏览器界面比例铺开（3/4、1/2、1/3），并保留最小可读宽度 */
 .content:not(.paged) .ch-body {
-  max-width: min(100%, max(320px, var(--reader-flow-width, 66.67%)));
+  max-width: min(100%, max(320px, var(--reader-flow-width, 50vw)));
 }
 
 .ch-body.txt {
