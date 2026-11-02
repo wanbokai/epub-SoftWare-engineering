@@ -131,12 +131,15 @@ const readerStyle = computed(() => {
   const c = store.config
   const palette = themeOf(c.theme)
   const marginMap: Record<number, string> = { 1: '8px', 2: '24px', 3: '48px' }
+  // 流式模式的正文最大宽度也随页边距变化，否则宽屏上文字始终 720px，看起来“调了没反应”
+  const maxWidthMap: Record<number, string> = { 1: '740px', 2: '700px', 3: '640px' }
   return {
     background: palette.surface,
     color: palette.text,
     fontSize: `${c.fontSize}px`,
     lineHeight: String(c.lineHeight),
     padding: `24px ${marginMap[c.pageMargin] ?? '24px'}`,
+    '--reader-max-width': maxWidthMap[c.pageMargin] ?? '700px',
   }
 })
 
@@ -848,7 +851,7 @@ onUnmounted(() => {
 }
 
 .ch-body {
-  max-width: 720px;
+  max-width: min(var(--reader-max-width, 720px), 100%);
   margin: 0 auto;
   overflow-wrap: break-word;
 }
