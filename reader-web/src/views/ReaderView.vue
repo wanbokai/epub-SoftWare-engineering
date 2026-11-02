@@ -44,6 +44,8 @@ const pageIndex = ref(0)
 const pageCount = ref(1)
 const pageWidth = ref(0)
 const pageHeight = ref(0)
+// 宽屏时一屏显示两页（像翻书），窄屏仍是单页
+const twoPage = ref(false)
 const PAGE_GAP = 48
 
 // 流式模式下当前滚动位置占可滚动范围的比例（0~1）。
@@ -97,6 +99,16 @@ const showChapterTitle = computed(() => {
 })
 
 const isPaged = computed(() => store.config.pageMode === 1)
+const pageStep = computed(() => (twoPage.value ? 2 : 1))
+
+// 底栏显示的页码范围：单页为 "3/7 页"，两页为 "3-4/7 页"
+const pageRange = computed(() => {
+  if (!isPaged.value || pageCount.value <= 1) return ''
+  const step = pageStep.value
+  const start = Math.floor(pageIndex.value / step) * step + 1
+  const end = Math.min(start + step - 1, pageCount.value)
+  return start === end ? `${start}/${pageCount.value} 页` : `${start}-${end}/${pageCount.value} 页`
+})
 
 // 章内位置：分页模式用页码换算，流式模式用滚动比例。
 const intra = computed(() => {
@@ -131,12 +143,28 @@ const readerStyle = computed(() => {
 // 分页轨道的列宽、列间距与横向位移。
 const pageTrackStyle = computed(() => {
   if (!isPaged.value) return { width: '100%' }
+  const step = pageStep.value
+  // 两页模式下每次跨两页，位移也按两页计算
+  const spreadStart = Math.floor(pageIndex.value / step) * step
+  const width = twoPage.value ? pageWidth.value * 2 + PAGE_GAP : pageWidth.value
   return {
-    width: `${pageWidth.value}px`,
+    width: `${width}px`,
     height: `${pageHeight.value}px`,
     columnWidth: `${pageWidth.value}px`,
     columnGap: `${PAGE_GAP}px`,
-    transform: `translateX(${-pageIndex.value * (pageWidth.value + PAGE_GAP)}px)`,
+    transform: `translateX(${-spreadStart * (pageWidth.value + PAGE_GAP)}px)`,
+  }
+})
+
+// 分页可视窗口：只露出一页或两页，避免宽屏时把后面的列也显示出来
+const pageViewportStyle = computed(() => {
+  if (!isPaged.value) return { width: '100%' }
+  const width = twoPage.value ? pageWidth.value * 2 + PAGE_GAP : pageWidth.value
+  return {
+    width: `${width}px`,
+    height: `${pageHeight.value}px`,
+    margin: '0 auto',
+    overflow: 'hidden',
   }
 })
 
@@ -150,8 +178,14 @@ function measurePages() {
   const styles = getComputedStyle(el)
   const padX = parseFloat(styles.paddingLeft) + parseFloat(styles.paddingRight)
   const padY = parseFloat(styles.paddingTop) + parseFloat(styles.paddingBottom)
-  // 正文最大阅读宽度 720px，超宽屏居中原样排版。
-  pageWidth.value = Math.min(720, Math.max(120, el.clientWidth - padX))
+  const available = Math.max(120, el.clientWidth - padX)
+
+  // 宽屏一屏两页；页边距同时影响每页最大宽度，保证“窄/中/宽”能看出区别
+  twoPage.value = available >= 1000
+  const cap = store.config.pageMargin === 1 ? 740 : store.config.pageMargin === 3 ? 640 : 700
+  pageWidth.value = twoPage.value
+    ? Math.min(cap, Math.max(120, Math.floor((available - PAGE_GAP) / 2)))
+    : Math.min(cap, available)
   pageHeight.value = Math.max(120, el.clientHeight - padY)
   updatePageCount()
 }
@@ -168,6 +202,8 @@ function updatePageCount() {
   const count = Math.max(1, Math.round((track.scrollWidth + PAGE_GAP) / step))
   pageCount.value = Math.min(count, 5000)
   pageIndex.value = Math.min(pageIndex.value, pageCount.value - 1)
+  // 两页模式对齐到左页，避免停在右半页
+  pageIndex.value = Math.floor(pageIndex.value / pageStep.value) * pageStep.value
 }
 
 /** 把 0~1 的章内位置换算成页码或滚动距离。 */
@@ -176,10 +212,11 @@ async function applyIntra(target: number) {
   measurePages()
   const ratio = Math.min(1, Math.max(0, target))
   if (isPaged.value) {
-    pageIndex.value = Math.min(
-      pageCount.value - 1,
-      Math.max(0, Math.round(ratio * Math.max(0, pageCount.value - 1))),
-    )
+    const step = pageStep.value
+    let index = Math.round(ratio * Math.max(0, pageCount.value - 1))
+    // 两页模式按“跨页起点”对齐，避免落在右半页
+    index = Math.floor(index / step) * step
+    pageIndex.value = Math.min(index, Math.max(0, Math.floor((pageCount.value - 1) / step) * step))
   } else if (contentEl.value) {
     contentEl.value.scrollTop =
       ratio * Math.max(0, contentEl.value.scrollHeight - contentEl.value.clientHeight)
@@ -261,7 +298,8 @@ async function gotoChapter(i: number, lastPage = false) {
   await loadChapter(i)
   measurePages()
   if (lastPage) {
-    pageIndex.value = Math.max(0, pageCount.value - 1)
+    const step = pageStep.value
+    pageIndex.value = Math.max(0, Math.floor((pageCount.value - 1) / step) * step)
   }
   schedulePush()
 }
@@ -271,11 +309,12 @@ function prevPage() {
     gotoChapter(currentIndex.value - 1)
     return
   }
-  if (pageIndex.value > 0) {
-    pageIndex.value--
+  const step = pageStep.value
+  if (pageIndex.value >= step) {
+    pageIndex.value -= step
     return
   }
-  // 当前章第一页：翻到上一章最后一页
+  // 当前章第一屏：翻到上一章最后一屏
   if (currentIndex.value > 0) gotoChapter(currentIndex.value - 1, true)
 }
 
@@ -284,8 +323,9 @@ function nextPage() {
     gotoChapter(currentIndex.value + 1)
     return
   }
-  if (pageIndex.value < pageCount.value - 1) {
-    pageIndex.value++
+  const step = pageStep.value
+  if (pageIndex.value + step < pageCount.value) {
+    pageIndex.value += step
     return
   }
   if (currentIndex.value < totalChapters.value - 1) gotoChapter(currentIndex.value + 1)
@@ -298,7 +338,7 @@ function canPrev() {
 
 function canNext() {
   if (currentIndex.value >= totalChapters.value - 1) {
-    return isPaged.value ? pageIndex.value < pageCount.value - 1 : false
+    return isPaged.value ? pageIndex.value + pageStep.value < pageCount.value : false
   }
   return true
 }
@@ -553,19 +593,21 @@ onUnmounted(() => {
       @click="onContentClick"
       @scroll="onScroll"
     >
-      <div ref="pageEl" class="page-track" :style="pageTrackStyle">
-        <article v-if="currentChapter">
-          <h2 v-if="showChapterTitle" class="ch-title">{{ currentChapter.title }}</h2>
-          <div v-if="chapterLoading" class="chapter-tip">正在加载本章…</div>
-          <div v-else-if="chapterError" class="chapter-tip">{{ chapterError }}</div>
-          <!-- EPUB 章节为 XHTML 片段，用 v-html 渲染；TXT 为纯文本用白空间保留。 -->
-          <div
-            v-else-if="book && item && item.fileType === 1"
-            class="ch-body"
-            v-html="currentChapter.content"
-          ></div>
-          <pre v-else class="ch-body txt">{{ currentChapter.content }}</pre>
-        </article>
+      <div class="page-viewport" :style="pageViewportStyle">
+        <div ref="pageEl" class="page-track" :style="pageTrackStyle">
+          <article v-if="currentChapter">
+            <h2 v-if="showChapterTitle" class="ch-title">{{ currentChapter.title }}</h2>
+            <div v-if="chapterLoading" class="chapter-tip">正在加载本章…</div>
+            <div v-else-if="chapterError" class="chapter-tip">{{ chapterError }}</div>
+            <!-- EPUB 章节为 XHTML 片段，用 v-html 渲染；TXT 为纯文本用白空间保留。 -->
+            <div
+              v-else-if="book && item && item.fileType === 1"
+              class="ch-body"
+              v-html="currentChapter.content"
+            ></div>
+            <pre v-else class="ch-body txt">{{ currentChapter.content }}</pre>
+          </article>
+        </div>
       </div>
     </main>
 
@@ -576,7 +618,7 @@ onUnmounted(() => {
       </button>
       <span class="pos">
         {{ currentIndex + 1 }} / {{ totalChapters }}
-        <template v-if="isPaged && pageCount > 1"> · {{ pageIndex + 1 }}/{{ pageCount }} 页</template>
+        <template v-if="isPaged && pageCount > 1"> · {{ pageRange }}</template>
       </span>
       <span class="pct">{{ progressPercent.toFixed(1) }}%</span>
       <button class="icon-btn" :disabled="!canNext()" @click="nextPage">
@@ -775,13 +817,18 @@ onUnmounted(() => {
   transition: background 0.2s, color 0.2s;
 }
 
+/* 分页可视窗口：只显示当前一页/两页，由 JS 设置宽度和高度 */
+.page-viewport {
+  width: 100%;
+}
+
 /* 分页模式：隐藏纵向滚动，按列横向翻页。 */
 .content.paged {
   overflow: hidden;
 }
 
 .content.paged .page-track {
-  margin: 0 auto;
+  margin: 0;
   column-fill: auto;
   will-change: transform;
   transition: transform 0.18s ease;
