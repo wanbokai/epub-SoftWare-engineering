@@ -68,6 +68,34 @@ const currentChapter = computed<Chapter | null>(() => {
   return book.value.chapters[currentIndex.value] ?? null
 })
 
+/**
+ * EPUB 章节正文通常自带 <h1>第X章</h1>，若阅读器再渲染一次章节标题就会出现两个标题。
+ * 这里检测正文开头的 h1–h3：只要它看起来就是本章标题，就不再显示阅读器的标题；
+ * TXT 的标题行已在解析时剥离，仍由阅读器渲染。
+ */
+const showChapterTitle = computed(() => {
+  const chapter = currentChapter.value
+  if (!chapter) return false
+  if (item.value?.fileType !== 1) return true
+
+  // 去掉 <head>（内联样式可能很长），再看正文开头是否自带标题
+  const html = chapter.content.replace(/<head[\s\S]*?<\/head>/i, '')
+  const head = html.slice(0, 2000)
+  const matched = head.match(/<h[1-3][^>]*>([\s\S]*?)<\/h[1-3]>/i)
+  if (!matched) return true
+
+  const heading = matched[1].replace(/<[^>]+>/g, '').replace(/\s+/g, '').trim()
+  const title = chapter.title.replace(/\s+/g, '').trim()
+  if (!heading || !title) return true
+
+  return !(
+    heading.includes(title) ||
+    title.includes(heading) ||
+    /第[0-9零一二三四五六七八九十百千两]+[章节回卷篇部]/.test(heading) ||
+    /^(chapter|section)\s*\d+/i.test(heading)
+  )
+})
+
 const isPaged = computed(() => store.config.pageMode === 1)
 
 // 章内位置：分页模式用页码换算，流式模式用滚动比例。
@@ -506,7 +534,7 @@ onUnmounted(() => {
     >
       <div ref="pageEl" class="page-track" :style="pageTrackStyle">
         <article v-if="currentChapter">
-          <h2 class="ch-title">{{ currentChapter.title }}</h2>
+          <h2 v-if="showChapterTitle" class="ch-title">{{ currentChapter.title }}</h2>
           <!-- EPUB 章节为 XHTML 片段，用 v-html 渲染；TXT 为纯文本用白空间保留。 -->
           <div
             v-if="book && item && item.fileType === 1"
