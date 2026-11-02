@@ -5,6 +5,7 @@ import { useReaderStore } from '@/stores/reader'
 import { bookshelfApi } from '@/api/bookshelf'
 import { parserApi } from '@/api/parser'
 import { syncApi } from '@/api/sync'
+import { getAccessToken } from '@/api/http'
 import { buildCfi, parseCfi, intraFromPercent, isModernCfi, percentOf } from '@/utils/locator'
 import {
   deletePendingProgress,
@@ -32,6 +33,8 @@ const chapterError = ref('')
 const currentIndex = ref(0)
 const showToc = ref(false)
 const showSettings = ref(false)
+const tocKeyword = ref('')
+const tocBodyEl = ref<HTMLElement | null>(null)
 const saving = ref(false)
 
 const conflict = ref<ConflictResponse | null>(null)
@@ -64,6 +67,19 @@ const modes = [
 ]
 
 const totalChapters = computed(() => book.value?.chapters.length ?? 0)
+
+// 目录带原始下标，过滤后仍能正确定位章节。
+const tocEntries = computed(() => (book.value?.toc ?? []).map((item, index) => ({ item, index })))
+const filteredToc = computed(() => {
+  const keyword = tocKeyword.value.trim().toLowerCase()
+  if (!keyword) return tocEntries.value
+  return tocEntries.value.filter(({ item }) => (item.title ?? '').toLowerCase().includes(keyword))
+})
+
+/** 目录里当前章的下标（TOC 可能没有 chapterIndex）。 */
+function tocChapterIndex(entry: { item: { chapterIndex?: number | null }; index: number }): number {
+  return entry.item.chapterIndex ?? entry.index
+}
 
 const currentChapter = computed<Chapter | null>(() => {
   if (!book.value) return null
@@ -176,6 +192,8 @@ const pageViewportStyle = computed(() => {
 
 // 节流上报进度。
 let pushTimer: ReturnType<typeof setTimeout> | null = null
+// 正在后台补取的章节，避免重复请求。
+const prefetching = new Set<number>()
 
 /** 量取可视区域尺寸并重算页数。 */
 function measurePages() {
@@ -233,7 +251,11 @@ async function applyIntra(target: number) {
 /** 按需加载某一章的正文；已加载过则直接返回。 */
 async function loadChapter(index: number) {
   const chapter = book.value?.chapters[index]
-  if (!chapter || chapter.content || !item.value) return
+  if (!chapter || !item.value) return
+  if (chapter.content) {
+    void prefetchChapter(index + 1)
+    return
+  }
 
   chapterLoading.value = true
   chapterError.value = ''
@@ -247,6 +269,23 @@ async function loadChapter(index: number) {
   }
   await nextTick()
   measurePages()
+  // 静默预取下一章，翻页时直接命中内存，不再等接口。
+  void prefetchChapter(index + 1)
+}
+
+/** 后台补取章节：不触发“正在加载本章”，也不重新分页。 */
+async function prefetchChapter(index: number) {
+  const chapter = book.value?.chapters[index]
+  if (!chapter || chapter.content || !item.value || prefetching.has(index)) return
+  prefetching.add(index)
+  try {
+    const loaded = await parserApi.chapter(item.value.fileId, index)
+    chapter.content = loaded.content ?? ''
+  } catch {
+    // 预取失败不打扰用户，真正翻到时会再请求一次。
+  } finally {
+    prefetching.delete(index)
+  }
 }
 
 /** 从书架条目恢复上次阅读位置（章节 + 章内位置）。 */
@@ -302,7 +341,13 @@ async function gotoChapter(i: number, lastPage = false) {
   showToc.value = false
 
   await loadChapter(i)
+  await nextTick()
   measurePages()
+  if (!isPaged.value && contentEl.value) {
+    // 流式模式切章后回到章首，避免沿用上一章的滚动位置。
+    contentEl.value.scrollTop = 0
+    scrollRatio.value = 0
+  }
   if (lastPage) {
     const step = pageStep.value
     pageIndex.value = Math.max(0, Math.floor((pageCount.value - 1) / step) * step)
@@ -437,6 +482,43 @@ async function pushProgress() {
   }
 }
 
+/** 页面隐藏/关闭时用 keepalive 直接发一次，避免卸载时请求被浏览器取消。 */
+function pushProgressKeepalive() {
+  if (!item.value) return
+  const token = getAccessToken()
+  if (!token) return
+  const payload = {
+    cfi: cfi.value,
+    percent: Math.round(progressPercent.value * 100) / 100,
+    syncVersion: item.value.syncVersion,
+  }
+  try {
+    void fetch(`/api/v1/sync/progress/${itemId}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(payload),
+      keepalive: true,
+    }).catch(() => {
+      // 关闭页面时失败不提示，下次打开会以服务端版本为准。
+    })
+  } catch {
+    // fetch 本身同步抛错（极少数环境）时忽略。
+  }
+}
+
+function onVisibilityChange() {
+  if (document.visibilityState === 'hidden') {
+    void pushProgress()
+  }
+}
+
+function onPageHide() {
+  pushProgressKeepalive()
+}
+
 /** 补传离线期间积压的进度。 */
 async function flushPending() {
   if (!item.value) return
@@ -524,6 +606,18 @@ watch(book, async () => {
   measurePages()
 })
 
+// 打开目录时清空搜索，并把当前章滚到可视区域中间。
+watch(showToc, async (open) => {
+  if (!open) return
+  tocKeyword.value = ''
+  await nextTick()
+  requestAnimationFrame(() => {
+    tocBodyEl.value
+      ?.querySelector<HTMLElement>('.toc-item.active')
+      ?.scrollIntoView({ block: 'center' })
+  })
+})
+
 watch(pageIndex, () => schedulePush())
 
 watch(
@@ -553,6 +647,8 @@ onMounted(async () => {
   window.addEventListener('keydown', onKeydown)
   window.addEventListener('resize', onResize)
   window.addEventListener('online', flushPending)
+  window.addEventListener('pagehide', onPageHide)
+  document.addEventListener('visibilitychange', onVisibilityChange)
 })
 
 onUnmounted(() => {
@@ -562,6 +658,8 @@ onUnmounted(() => {
   window.removeEventListener('keydown', onKeydown)
   window.removeEventListener('resize', onResize)
   window.removeEventListener('online', flushPending)
+  window.removeEventListener('pagehide', onPageHide)
+  document.removeEventListener('visibilitychange', onVisibilityChange)
   // 离开前补一次上报，避免 800ms 防抖窗口内退出导致进度丢失。
   void pushProgress()
 })
@@ -638,17 +736,23 @@ onUnmounted(() => {
         <span>目录</span>
         <button class="drawer-close" aria-label="关闭目录" @click="showToc = false">×</button>
       </div>
-      <div class="drawer-body">
-        <div
-          v-for="(t, i) in book?.toc ?? []"
-          :key="i"
-          class="toc-item"
-          :class="{ active: (t.chapterIndex ?? i) === currentIndex }"
-          @click="gotoChapter(t.chapterIndex ?? i)"
-        >
-          {{ t.title }}
+      <div ref="tocBodyEl" class="drawer-body">
+        <div class="toc-search">
+          <input v-model="tocKeyword" class="input" type="text" placeholder="搜索章节…" />
         </div>
-        <div v-if="!book?.toc?.length" class="text-sub" style="padding: 16px">无目录</div>
+        <div v-if="!tocEntries.length" class="toc-empty">无目录</div>
+        <div v-else-if="!filteredToc.length" class="toc-empty">没有匹配的章节</div>
+        <template v-else>
+          <div
+            v-for="entry in filteredToc"
+            :key="entry.index"
+            class="toc-item"
+            :class="{ active: tocChapterIndex(entry) === currentIndex }"
+            @click="gotoChapter(tocChapterIndex(entry))"
+          >
+            {{ entry.item.title }}
+          </div>
+        </template>
       </div>
     </div>
 
@@ -1151,6 +1255,27 @@ onUnmounted(() => {
 
 .drawer-body {
   padding: 10px 12px 16px;
+}
+
+.toc-search {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 2px 0 10px;
+  background: var(--surface);
+}
+
+.toc-search .input {
+  height: 38px;
+  padding: 8px 12px;
+  font-size: 13px;
+}
+
+.toc-empty {
+  padding: 18px 12px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-sub);
 }
 
 .toc-item {
