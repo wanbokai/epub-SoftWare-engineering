@@ -7,6 +7,8 @@ import com.reader.common.BusinessException;
 import com.reader.file.FileAsset;
 import com.reader.file.FileAssetMapper;
 import com.reader.file.StorageService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -22,6 +24,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/parser")
 public class ParserController {
 
+    private static final Logger log = LoggerFactory.getLogger(ParserController.class);
     private static final String UNNAMED_TITLE = "未命名书籍";
 
     private final ParserService parserService;
@@ -29,32 +32,88 @@ public class ParserController {
     private final StorageService storageService;
     private final BookshelfItemMapper bookshelfItemMapper;
     private final OwnershipGuard ownershipGuard;
+    private final BookCache bookCache;
 
     public ParserController(ParserService parserService,
                             FileAssetMapper fileAssetMapper,
                             StorageService storageService,
                             BookshelfItemMapper bookshelfItemMapper,
-                            OwnershipGuard ownershipGuard) {
+                            OwnershipGuard ownershipGuard,
+                            BookCache bookCache) {
         this.parserService = parserService;
         this.fileAssetMapper = fileAssetMapper;
         this.storageService = storageService;
         this.bookshelfItemMapper = bookshelfItemMapper;
         this.ownershipGuard = ownershipGuard;
+        this.bookCache = bookCache;
     }
 
     /**
-     * 解析已上传文件，返回完整书对象（元数据 + 目录 + 章节正文）。
+     * 解析已上传文件，返回书对象（元数据 + 目录 + 章节标题，不含章节正文）。
+     * <p>
+     * 正文通过 {@code /chapter/{index}} 按需加载，避免一本 2000+ 章的书一次返回几十 MB JSON。
      */
     @GetMapping("/{fileId}")
     public ApiResponse<Book> parse(@PathVariable("fileId") Long fileId) {
         FileAsset asset = requireReadableAsset(fileId);
+        Book book = loadBook(asset);
+        return ApiResponse.ok(slimCopy(book));
+    }
 
+    /**
+     * 按章节下标返回正文，供阅读器按需加载。
+     */
+    @GetMapping("/{fileId}/chapter/{index}")
+    public ApiResponse<Book.Chapter> chapter(@PathVariable("fileId") Long fileId,
+                                             @PathVariable("index") Integer index) {
+        FileAsset asset = requireReadableAsset(fileId);
+        Book book = loadBook(asset);
+        if (index == null || index < 0 || index >= book.getChapters().size()) {
+            throw new BusinessException(404, "章节不存在");
+        }
+        return ApiResponse.ok(book.getChapters().get(index));
+    }
+
+    /**
+     * 取整本书：优先用进程内缓存，未命中则从对象存储下载并解析。
+     */
+    private Book loadBook(FileAsset asset) {
+        Book cached = bookCache.get(asset.getId());
+        if (cached != null) {
+            return cached;
+        }
+
+        long started = System.currentTimeMillis();
         byte[] content = storageService.download(asset.getStorageKey());
         Book book = parserService.parse(content, asset.getFileType(), asset.getMetaTitle());
 
         // 历史数据的元数据为空，首次解析成功后回填，供书架展示与作者检索
         backfillMeta(asset, book.getMeta());
-        return ApiResponse.ok(book);
+        bookCache.put(asset.getId(), book);
+        log.info("解析完成 fileId={} size={}KB chapters={} 耗时={}ms",
+                asset.getId(), content.length / 1024, book.getChapters().size(),
+                System.currentTimeMillis() - started);
+        return book;
+    }
+
+    /**
+     * 只保留目录与章节标题，正文置空，显著缩小首次加载的响应体。
+     */
+    private Book slimCopy(Book source) {
+        Book copy = new Book();
+        copy.setMeta(source.getMeta());
+        copy.setSpine(source.getSpine());
+        copy.setToc(source.getToc());
+        java.util.List<Book.Chapter> chapters = new java.util.ArrayList<>();
+        for (Book.Chapter chapter : source.getChapters()) {
+            Book.Chapter slim = new Book.Chapter();
+            slim.setId(chapter.getId());
+            slim.setTitle(chapter.getTitle());
+            slim.setContent("");
+            chapters.add(slim);
+        }
+        copy.setChapters(chapters);
+        return copy;
     }
 
     /**

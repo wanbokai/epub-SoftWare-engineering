@@ -1,5 +1,10 @@
 server:
   port: 8080
+  # 书籍解析结果可能很大，开启 gzip 后 JSON 传输量通常能降到 1/5 左右
+  compression:
+    enabled: true
+    mime-types: application/json,application/xml,text/html,text/plain,text/css,application/javascript
+    min-response-size: 2048
 
 spring:
   application:

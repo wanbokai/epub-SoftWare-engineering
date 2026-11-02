@@ -12,6 +12,8 @@ interface CachedBook {
   fileId: number
   book: Book
   cachedAt: number
+  /** 解析器/数据结构版本；版本不一致时旧缓存直接作废 */
+  version?: number
 }
 
 export interface PendingProgress {
@@ -27,6 +29,12 @@ const DB_NAME = 'reader-local'
 const DB_VERSION = 1
 const BOOK_STORE = 'books'
 const PENDING_STORE = 'pending'
+
+/**
+ * 解析结果缓存版本。
+ * 解析逻辑或 Book 结构变化时 +1，旧缓存自动失效并重新解析一次。
+ */
+const CACHE_VERSION = 3
 
 let dbPromise: Promise<IDBDatabase> | null = null
 
@@ -75,7 +83,7 @@ async function withStore<T>(
   })
 }
 
-/** 读取已缓存的书籍；未命中或不可用时返回 null。 */
+/** 读取已缓存的书籍；未命中、版本过旧或不可用时返回 null。 */
 export async function getCachedBook(fileId: number): Promise<Book | null> {
   try {
     const record = await withStore<CachedBook | undefined>(
@@ -83,7 +91,10 @@ export async function getCachedBook(fileId: number): Promise<Book | null> {
       'readonly',
       (store) => store.get(fileId),
     )
-    return record?.book ?? null
+    if (!record || record.version !== CACHE_VERSION) {
+      return null
+    }
+    return record.book ?? null
   } catch {
     return null
   }
@@ -93,7 +104,7 @@ export async function getCachedBook(fileId: number): Promise<Book | null> {
 export async function putCachedBook(fileId: number, book: Book): Promise<void> {
   try {
     await withStore<IDBValidKey>(BOOK_STORE, 'readwrite', (store) =>
-      store.put({ fileId, book, cachedAt: Date.now() } as CachedBook),
+      store.put({ fileId, book, cachedAt: Date.now(), version: CACHE_VERSION } as CachedBook),
     )
   } catch {
     // 缓存失败不影响阅读

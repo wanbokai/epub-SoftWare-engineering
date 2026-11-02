@@ -26,6 +26,8 @@ const book = ref<Book | null>(null)
 const item = ref<BookshelfItem | null>(null)
 const loading = ref(true)
 const error = ref('')
+const chapterLoading = ref(false)
+const chapterError = ref('')
 
 const currentIndex = ref(0)
 const showToc = ref(false)
@@ -47,8 +49,6 @@ const PAGE_GAP = 48
 // 流式模式下当前滚动位置占可滚动范围的比例（0~1）。
 const scrollRatio = ref(0)
 const positionRestored = ref(false)
-// 上一章时希望落到最后一页（分页模式）。
-let pendingLastPage = false
 
 const margins = [
   { value: 1, label: '窄' },
@@ -167,11 +167,6 @@ function updatePageCount() {
   const step = pageWidth.value + PAGE_GAP
   const count = Math.max(1, Math.round((track.scrollWidth + PAGE_GAP) / step))
   pageCount.value = Math.min(count, 5000)
-  if (pendingLastPage) {
-    pendingLastPage = false
-    pageIndex.value = pageCount.value - 1
-    return
-  }
   pageIndex.value = Math.min(pageIndex.value, pageCount.value - 1)
 }
 
@@ -192,6 +187,25 @@ async function applyIntra(target: number) {
   }
 }
 
+/** 按需加载某一章的正文；已加载过则直接返回。 */
+async function loadChapter(index: number) {
+  const chapter = book.value?.chapters[index]
+  if (!chapter || chapter.content || !item.value) return
+
+  chapterLoading.value = true
+  chapterError.value = ''
+  try {
+    const loaded = await parserApi.chapter(item.value.fileId, index)
+    chapter.content = loaded.content ?? ''
+  } catch (e) {
+    chapterError.value = (e as Error).message || '本章加载失败，请稍后重试'
+  } finally {
+    chapterLoading.value = false
+  }
+  await nextTick()
+  measurePages()
+}
+
 /** 从书架条目恢复上次阅读位置（章节 + 章内位置）。 */
 async function restorePosition() {
   if (!book.value || positionRestored.value) return
@@ -205,6 +219,7 @@ async function restorePosition() {
   const target = isModernCfi(item.value?.progressCfi)
     ? intraFromPercent(item.value?.progressPercent, currentIndex.value, book.value.chapters.length)
     : 0
+  await loadChapter(currentIndex.value)
   await applyIntra(target)
 }
 
@@ -216,26 +231,21 @@ async function load() {
     item.value = list.find((b) => b.id === itemId) ?? null
     if (!item.value) throw new Error('书架中找不到这本书')
 
-    // 先展示本地缓存，做到二次打开秒开、断网也能读已打开过的书。
+    // 文件内容按 SHA 寻址，解析结果不会变化：命中缓存直接使用，
+    // 不再每次打开都重新下载整本书，避免大书重复占用带宽。
     const cached = await getCachedBook(item.value.fileId)
     if (cached) {
       book.value = cached
       loading.value = false
       await restorePosition()
+      return
     }
 
-    try {
-      const parsed = await parserApi.parse(item.value.fileId)
-      book.value = parsed
-      void putCachedBook(item.value.fileId, parsed)
-      if (!cached) {
-        loading.value = false
-        await restorePosition()
-      }
-    } catch (e) {
-      // 有缓存时静默降级为离线阅读；无缓存才提示错误。
-      if (!cached) throw e
-    }
+    const parsed = await parserApi.parse(item.value.fileId)
+    book.value = parsed
+    void putCachedBook(item.value.fileId, parsed)
+    loading.value = false
+    await restorePosition()
   } catch (e) {
     error.value = (e as Error).message || '加载书籍失败'
   } finally {
@@ -243,11 +253,17 @@ async function load() {
   }
 }
 
-function gotoChapter(i: number, lastPage = false) {
+async function gotoChapter(i: number, lastPage = false) {
   if (i < 0 || i >= totalChapters.value) return
-  pendingLastPage = lastPage
   currentIndex.value = i
   showToc.value = false
+
+  await loadChapter(i)
+  measurePages()
+  if (lastPage) {
+    pageIndex.value = Math.max(0, pageCount.value - 1)
+  }
+  schedulePush()
 }
 
 function prevPage() {
@@ -518,7 +534,12 @@ onUnmounted(() => {
     </header>
 
     <!-- 正文 -->
-    <div v-if="loading" class="center">加载中…</div>
+    <div v-if="loading" class="center">
+      <p>加载中…</p>
+      <p class="text-sub" style="font-size: 13px">
+        首次打开较大的书需要解析，可能需要几十秒，请稍候
+      </p>
+    </div>
     <div v-else-if="error" class="center">
       <p>{{ error }}</p>
       <button class="btn" @click="closeReader">返回书架</button>
@@ -535,9 +556,11 @@ onUnmounted(() => {
       <div ref="pageEl" class="page-track" :style="pageTrackStyle">
         <article v-if="currentChapter">
           <h2 v-if="showChapterTitle" class="ch-title">{{ currentChapter.title }}</h2>
+          <div v-if="chapterLoading" class="chapter-tip">正在加载本章…</div>
+          <div v-else-if="chapterError" class="chapter-tip">{{ chapterError }}</div>
           <!-- EPUB 章节为 XHTML 片段，用 v-html 渲染；TXT 为纯文本用白空间保留。 -->
           <div
-            v-if="book && item && item.fileType === 1"
+            v-else-if="book && item && item.fileType === 1"
             class="ch-body"
             v-html="currentChapter.content"
           ></div>
@@ -764,6 +787,13 @@ onUnmounted(() => {
   font-size: 1.6em;
   margin: 0 0 20px;
   text-align: center;
+}
+
+.chapter-tip {
+  text-align: center;
+  color: var(--text-sub);
+  font-size: 14px;
+  padding: 40px 0;
 }
 
 .ch-body {

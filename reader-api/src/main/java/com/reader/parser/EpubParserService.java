@@ -218,14 +218,17 @@ public class EpubParserService {
     }
 
     /**
-     * 解压 ZIP，返回 路径 -> 字节 的映射（跳过目录项）。
+     * 解压 ZIP，返回 路径 -> 字节 的映射。
+     * <p>
+     * 只保留 OPF/NCX/XHTML 等文本资源，跳过图片、字体、CSS 等二进制内容：
+     * 阅读器目前只渲染章节正文，没必要把整本图片读进内存，也能显著缩短大书的解析时间。
      */
     private Map<String, byte[]> unzip(byte[] content) throws IOException {
         Map<String, byte[]> resources = new HashMap<>();
         try (ZipInputStream zis = new ZipInputStream(new ByteArrayInputStream(content))) {
             ZipEntry entry;
             while ((entry = zis.getNextEntry()) != null) {
-                if (entry.isDirectory()) {
+                if (entry.isDirectory() || !isTextResource(entry.getName())) {
                     continue;
                 }
                 ByteArrayOutputStream bos = new ByteArrayOutputStream();
@@ -238,6 +241,16 @@ public class EpubParserService {
             }
         }
         return resources;
+    }
+
+    private boolean isTextResource(String name) {
+        String lower = name.toLowerCase();
+        return lower.endsWith(".xhtml")
+                || lower.endsWith(".html")
+                || lower.endsWith(".htm")
+                || lower.endsWith(".opf")
+                || lower.endsWith(".ncx")
+                || lower.endsWith(".xml");
     }
 
     /**
