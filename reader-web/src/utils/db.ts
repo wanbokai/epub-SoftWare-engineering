@@ -34,7 +34,7 @@ const PENDING_STORE = 'pending'
  * 解析结果缓存版本。
  * 解析逻辑或 Book 结构变化时 +1，旧缓存自动失效并重新解析一次。
  */
-const CACHE_VERSION = 3
+const CACHE_VERSION = 4
 
 let dbPromise: Promise<IDBDatabase> | null = null
 
