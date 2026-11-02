@@ -697,7 +697,9 @@ onUnmounted(() => {
 
 <style scoped>
 .reader {
+  height: 100vh;
   min-height: 100vh;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   background: var(--bg);
@@ -766,7 +768,9 @@ onUnmounted(() => {
 }
 
 .content {
-  flex: 1;
+  /* 必须限制在视口高度内：否则内容会把 flex 项撑高，分页时量到整章高度，页数永远为 1 */
+  flex: 1 1 0;
+  min-height: 0;
   overflow-y: auto;
   transition: background 0.2s, color 0.2s;
 }
