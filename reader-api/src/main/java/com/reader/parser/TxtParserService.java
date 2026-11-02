@@ -23,6 +23,15 @@ public class TxtParserService {
             "^\\s*(第\\s*[0-9零一二三四五六七八九十百千万两]+\\s*[章節节回卷篇部]|" +
                     "(?:Chapter|Section|CHAPTER|SECTION)\\s+[0-9IVXivx]+)\\s*[：:、.．\\s]?.*$");
 
+    // 书籍自带的目录标题行：目录 / 目 录 / Contents / Table of Contents
+    private static final Pattern TOC_HEADING_PATTERN = Pattern.compile(
+            "^\\s*(目\\s*录|目\\s*錄|contents|table of contents)\\s*[:：]?\\s*$",
+            Pattern.CASE_INSENSITIVE);
+
+    // 目录条目常见形态：标题 + 连续点号 + 页码
+    private static final Pattern TOC_PAGE_NUMBER_PATTERN = Pattern.compile(
+            "^.*[.．·…]{2,}\\s*\\d+\\s*$");
+
     /**
      * 解析 TXT 字节流，输出统一书对象。
      *
@@ -134,10 +143,19 @@ public class TxtParserService {
 
         String[] lines = text.split("\\r?\\n", -1);
 
-        // 扫描章节起始行
+        // 识别书籍自带的「目录」区块：目录条目本身也是“第X章”格式，若参与分章会被拆成空章节，
+        // 并在阅读器里再生成一份目录，形成“书里有目录、阅读器又加一份”的重复。
+        int tocHeading = findTocHeading(lines);
+        int tocEnd = tocHeading >= 0 ? findTocBlockEnd(lines, tocHeading) : -1;
+        boolean hasTocBlock = tocHeading >= 0 && tocEnd >= tocHeading + 2;
+
+        // 扫描章节起始行（跳过目录区块）
         java.util.List<Integer> chapterStarts = new java.util.ArrayList<>();
         java.util.List<String> chapterTitles = new java.util.ArrayList<>();
         for (int i = 0; i < lines.length; i++) {
+            if (hasTocBlock && i >= tocHeading && i <= tocEnd) {
+                continue;
+            }
             Matcher m = CHAPTER_PATTERN.matcher(lines[i]);
             if (m.matches()) {
                 chapterStarts.add(i);
@@ -165,7 +183,9 @@ public class TxtParserService {
 
         // 正文前的内容作为「前言」章节（若有）
         if (chapterStarts.get(0) > 0) {
-            String prefix = joinRange(lines, 0, chapterStarts.get(0));
+            String prefix = hasTocBlock
+                    ? joinRangeExcluding(lines, 0, chapterStarts.get(0), tocHeading, tocEnd)
+                    : joinRange(lines, 0, chapterStarts.get(0));
             if (!prefix.isBlank()) {
                 Book.Chapter preface = new Book.Chapter();
                 preface.setId("0");
@@ -212,6 +232,86 @@ public class TxtParserService {
     private String joinRange(String[] lines, int from, int to) {
         StringBuilder sb = new StringBuilder();
         for (int i = from; i < to && i < lines.length; i++) {
+            sb.append(lines[i]).append('\n');
+        }
+        return sb.toString();
+    }
+
+    /**
+     * 在前 80 行内寻找独立的「目录」标题行。
+     */
+    private int findTocHeading(String[] lines) {
+        int limit = Math.min(lines.length, 80);
+        for (int i = 0; i < limit; i++) {
+            if (TOC_HEADING_PATTERN.matcher(lines[i]).matches()) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    /**
+     * 目录区块的结束行（最后一条目录项或页码）。
+     * <p>
+     * 关键判断：目录项后面通常还是目录项/页码/空行；正文标题后面会紧跟正文段落。
+     * 若下一非空行不是目录项或页码，说明当前行已经是正文标题，目录块在此结束。
+     */
+    private int findTocBlockEnd(String[] lines, int heading) {
+        int lastEntry = heading;
+        int i = heading + 1;
+        while (i < lines.length) {
+            String trimmed = lines[i].trim();
+            if (trimmed.isEmpty()) {
+                i++;
+                continue;
+            }
+            if (isPageNumberLine(trimmed)) {
+                lastEntry = i;
+                i++;
+                continue;
+            }
+            if (!isTocEntryLine(trimmed)) {
+                break;
+            }
+            int next = nextNonBlank(lines, i + 1);
+            if (next >= 0 && !isTocEntryLine(lines[next].trim())
+                    && !isPageNumberLine(lines[next].trim())) {
+                // 当前行后面就是正文，说明它是真正的章节标题，不属于目录
+                break;
+            }
+            lastEntry = i;
+            i++;
+        }
+        return lastEntry;
+    }
+
+    private boolean isTocEntryLine(String line) {
+        return CHAPTER_PATTERN.matcher(line).matches()
+                || TOC_PAGE_NUMBER_PATTERN.matcher(line).matches();
+    }
+
+    private boolean isPageNumberLine(String line) {
+        return line.matches("^\\d{1,5}$");
+    }
+
+    private int nextNonBlank(String[] lines, int from) {
+        for (int i = from; i < lines.length; i++) {
+            if (!lines[i].trim().isEmpty()) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    /**
+     * 拼接区间，但跳过目录区块，避免“目录”两个字和目录项混进前言。
+     */
+    private String joinRangeExcluding(String[] lines, int from, int to, int skipFrom, int skipTo) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = from; i < to && i < lines.length; i++) {
+            if (i >= skipFrom && i <= skipTo) {
+                continue;
+            }
             sb.append(lines[i]).append('\n');
         }
         return sb.toString();

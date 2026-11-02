@@ -61,6 +61,12 @@ public class EpubParserService {
         java.util.List<Book.TocItem> toc = parseToc(opf, resources, baseDir, manifest);
         book.setToc(toc);
 
+        // EPUB3 的 nav 文档通常就是“目录页”，若它也在 spine 中，会被当成正文第一章，
+        // 与阅读器抽屉里的目录重复；这里跳过该文档，目录信息仍由 toc 提供。
+        String navHref = findNavHref(opf);
+        String navPath = navHref != null && !navHref.isBlank()
+                ? normalizePath(baseDir + navHref) : null;
+
         // 4. 解析各 spine 章节正文
         java.util.List<Book.Chapter> chapters = new java.util.ArrayList<>();
         java.util.List<String> spineHrefs = new java.util.ArrayList<>();
@@ -71,6 +77,9 @@ public class EpubParserService {
                 continue;
             }
             String fullPath = normalizePath(baseDir + href);
+            if (navPath != null && navPath.equals(fullPath)) {
+                continue;
+            }
             byte[] chapterBytes = resources.get(fullPath);
             if (chapterBytes == null) {
                 // 尝试未加 baseDir 的路径
@@ -289,7 +298,24 @@ public class EpubParserService {
     }
 
     /**
+     * 找到 EPUB3 的导航文档（manifest 中 properties 含 nav 的 item）。
+     */
+    private String findNavHref(Document opf) {
+        NodeList items = opf.getElementsByTagName("item");
+        for (int i = 0; i < items.getLength(); i++) {
+            Element item = (Element) items.item(i);
+            String properties = item.getAttribute("properties");
+            if (properties != null && properties.contains("nav")) {
+                String href = item.getAttribute("href");
+                return href != null && !href.isBlank() ? href : null;
+            }
+        }
+        return null;
+    }
+
+    /**
      * 解析 spine：返回按阅读顺序的 idref 列表。
+     * 跳过 linear="no" 的非线性资源（通常是封面、目录页等）。
      */
     private java.util.List<String> parseSpine(Document opf) {
         java.util.List<String> idrefs = new java.util.ArrayList<>();
@@ -299,6 +325,10 @@ public class EpubParserService {
             NodeList itemrefs = spine.getElementsByTagName("itemref");
             for (int i = 0; i < itemrefs.getLength(); i++) {
                 Element itemref = (Element) itemrefs.item(i);
+                String linear = itemref.getAttribute("linear");
+                if ("no".equalsIgnoreCase(linear)) {
+                    continue;
+                }
                 String idref = itemref.getAttribute("idref");
                 if (idref != null && !idref.isEmpty()) {
                     idrefs.add(idref);
@@ -314,16 +344,7 @@ public class EpubParserService {
     private java.util.List<Book.TocItem> parseToc(Document opf, Map<String, byte[]> resources,
                                                   String baseDir, Map<String, String> manifest) {
         // 1. NAV（EPUB3）：找 properties 含 nav 的 manifest item
-        NodeList items = opf.getElementsByTagName("item");
-        String navHref = null;
-        for (int i = 0; i < items.getLength(); i++) {
-            Element item = (Element) items.item(i);
-            String properties = item.getAttribute("properties");
-            if (properties != null && properties.contains("nav")) {
-                navHref = item.getAttribute("href");
-                break;
-            }
-        }
+        String navHref = findNavHref(opf);
         if (navHref != null) {
             byte[] navBytes = resources.get(normalizePath(baseDir + navHref));
             if (navBytes != null) {
