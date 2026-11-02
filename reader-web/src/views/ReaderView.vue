@@ -634,7 +634,10 @@ onUnmounted(() => {
 
     <!-- 目录抽屉 -->
     <div v-if="showToc" class="drawer">
-      <div class="drawer-head">目录</div>
+      <div class="drawer-head">
+        <span>目录</span>
+        <button class="drawer-close" aria-label="关闭目录" @click="showToc = false">×</button>
+      </div>
       <div class="drawer-body">
         <div
           v-for="(t, i) in book?.toc ?? []"
@@ -651,7 +654,10 @@ onUnmounted(() => {
 
     <!-- 设置抽屉 -->
     <div v-if="showSettings" class="drawer">
-      <div class="drawer-head">阅读设置</div>
+      <div class="drawer-head">
+        <span>阅读设置</span>
+        <button class="drawer-close" aria-label="关闭设置" @click="showSettings = false">×</button>
+      </div>
       <div class="drawer-body">
         <div class="field">
           <label>主题</label>
@@ -663,6 +669,7 @@ onUnmounted(() => {
               :class="{ active: store.config.theme === t.value }"
               @click="store.config.theme = t.value"
             >
+              <span class="theme-dot" :class="`theme-${t.value}`"></span>
               {{ t.label }}
             </button>
           </div>
@@ -1009,5 +1016,284 @@ onUnmounted(() => {
   gap: 8px;
   margin-top: 16px;
   flex-wrap: wrap;
+}
+
+/* ── 页庐 · 阅读器视觉 ─────────────────────────── */
+.bar {
+  gap: 10px;
+  padding: 9px 18px;
+  background: color-mix(in srgb, var(--surface) 90%, transparent);
+  backdrop-filter: blur(12px);
+}
+
+.bar.top {
+  height: 60px;
+  box-shadow: 0 1px 0 rgba(36, 49, 42, 0.04);
+}
+
+.bar.bottom {
+  height: 56px;
+  padding: 8px 18px;
+}
+
+.bar-top .bar-title,
+.bar-title {
+  font-family: var(--serif);
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.bar.top > .icon-btn:first-child {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border-radius: 50%;
+  background: var(--surface-2);
+  color: var(--text-sub);
+  font-size: 16px;
+}
+
+.bar.top > .icon-btn:first-child:hover {
+  background: var(--primary-soft);
+  color: var(--primary-hover);
+}
+
+.bar-actions .icon-btn {
+  padding: 7px 13px;
+  border-radius: 999px;
+  font-size: 13px;
+  color: var(--text-sub);
+}
+
+.bar-actions .icon-btn:hover {
+  background: var(--primary-soft);
+  color: var(--primary-hover);
+}
+
+.ch-title {
+  margin-bottom: 26px;
+  font-family: var(--serif);
+  font-size: 1.55em;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.ch-body {
+  text-align: justify;
+  letter-spacing: 0.01em;
+}
+
+.chapter-tip {
+  color: var(--text-sub);
+}
+
+.bar.bottom .icon-btn {
+  padding: 7px 14px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  font-size: 12.5px;
+  color: var(--text-sub);
+}
+
+.bar.bottom .icon-btn:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--primary) 38%, var(--border));
+  background: var(--primary-soft);
+  color: var(--primary-hover);
+}
+
+.pos {
+  font-size: 12.5px;
+}
+
+.pct {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--primary);
+}
+
+.drawer {
+  width: 340px;
+  border-right: 1px solid var(--border);
+  box-shadow: 18px 0 48px rgba(24, 37, 27, 0.12);
+}
+
+.drawer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 20px;
+  font-family: var(--serif);
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+}
+
+.drawer-close {
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 50%;
+  background: var(--surface-2);
+  color: var(--text-sub);
+  font-size: 18px;
+  line-height: 1;
+}
+
+.drawer-close:hover {
+  background: var(--primary-soft);
+  color: var(--primary-hover);
+}
+
+.drawer-body {
+  padding: 10px 12px 16px;
+}
+
+.toc-item {
+  padding: 11px 14px;
+  border-radius: 10px;
+  font-size: 13.5px;
+  color: var(--text-sub);
+  transition: background 0.16s ease, color 0.16s ease;
+}
+
+.toc-item:hover {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.toc-item.active {
+  background: var(--primary-soft);
+  color: var(--primary-hover);
+  font-weight: 600;
+}
+
+.field {
+  margin: 0 4px 16px;
+}
+
+.field label {
+  margin-bottom: 8px;
+  font-size: 12.5px;
+}
+
+.seg {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.seg-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-2);
+  font-size: 12.5px;
+  color: var(--text-sub);
+}
+
+.theme-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  flex: none;
+}
+
+.theme-1 {
+  background: #6f9a6d;
+}
+
+.theme-2 {
+  background: #2a3a2e;
+}
+
+.theme-3 {
+  background: #d8c29a;
+}
+
+.theme-4 {
+  background: #7fae7d;
+}
+
+.seg-item:hover {
+  border-color: color-mix(in srgb, var(--primary) 35%, var(--border));
+  color: var(--text);
+}
+
+.seg-item.active {
+  background: var(--primary-soft);
+  border-color: color-mix(in srgb, var(--primary) 45%, var(--border));
+  color: var(--primary-hover);
+  font-weight: 600;
+}
+
+.field input[type='range'] {
+  accent-color: var(--primary);
+  height: 4px;
+  cursor: pointer;
+}
+
+.drawer-body .btn {
+  width: calc(100% - 8px);
+  height: 40px;
+  margin: 4px 4px 10px;
+  font-size: 13.5px;
+}
+
+.modal {
+  background: color-mix(in srgb, #1b2a1f 38%, transparent);
+  backdrop-filter: blur(3px);
+}
+
+.modal-card {
+  padding: 24px;
+  border-radius: 18px;
+  box-shadow: var(--shadow-md);
+}
+
+.modal-card h3 {
+  margin: 0 0 6px;
+  font-family: var(--serif);
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.tag {
+  border-radius: 999px;
+  padding: 3px 9px;
+  background: var(--primary-soft);
+  color: var(--primary-hover);
+}
+
+@media (max-width: 640px) {
+  .drawer {
+    width: 86vw;
+    max-width: 340px;
+  }
+
+  .bar-actions .icon-btn {
+    padding: 7px 9px;
+  }
+
+  .bar.bottom {
+    padding: 8px 10px;
+  }
+
+  .bar.bottom .icon-btn {
+    padding: 7px 9px;
+    font-size: 12px;
+  }
+
+  .pos {
+    font-size: 11.5px;
+  }
 }
 </style>
