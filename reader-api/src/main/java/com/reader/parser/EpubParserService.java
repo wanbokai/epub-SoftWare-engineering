@@ -17,6 +17,8 @@ import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
@@ -29,6 +31,11 @@ import java.util.zip.ZipInputStream;
 public class EpubParserService {
 
     private static final String CONTAINER_PATH = "META-INF/container.xml";
+
+    private static final Pattern HEADING_PATTERN = Pattern.compile(
+            "(?is)<h[1-3][^>]*>(.*?)</h[1-3]>");
+    private static final Pattern TITLE_TAG_PATTERN = Pattern.compile(
+            "(?is)<title[^>]*>(.*?)</title>");
 
     /**
      * 解析 EPUB 字节流，输出统一书对象。
@@ -70,7 +77,6 @@ public class EpubParserService {
         // 4. 解析各 spine 章节正文
         java.util.List<Book.Chapter> chapters = new java.util.ArrayList<>();
         java.util.List<String> spineHrefs = new java.util.ArrayList<>();
-        int idx = 0;
         for (String idref : spineIdrefs) {
             String href = manifest.get(idref);
             if (href == null) {
@@ -89,19 +95,33 @@ public class EpubParserService {
                 continue;
             }
 
-            String chapterText = new String(chapterBytes, StandardCharsets.UTF_8);
+            String rawText = new String(chapterBytes, StandardCharsets.UTF_8);
+            String title = findTocTitle(toc, href);
+            if (title == null || title.isBlank()) {
+                title = extractTitle(rawText);
+            }
+            if (title == null || title.isBlank()) {
+                title = "第 " + (chapters.size() + 1) + " 章";
+            }
+            if (isFrontMatter(fullPath, title, rawText)) {
+                continue;
+            }
+
             Book.Chapter chapter = new Book.Chapter();
             chapter.setId(fullPath);
-            chapter.setTitle(findTocTitle(toc, href, idx));
-            chapter.setContent(chapterText);
+            chapter.setTitle(title);
+            // 目前阅读器不提供 EPUB 内部图片资源，先移除 img，避免显示裂图/alt 文本
+            chapter.setContent(stripBrokenImages(rawText));
             chapters.add(chapter);
             spineHrefs.add(fullPath);
-            idx++;
         }
         book.setChapters(chapters);
         book.setSpine(spineHrefs);
 
-        // 5. 目录项回填章节下标：目录与 spine 不一定 1:1，前端不能按下标硬套
+        // 5. 没有 NAV/NCX 的书，用章节标题生成一份目录，避免“无目录”或全部叫“第 N 章”
+        fillTocIfEmpty(toc, chapters);
+
+        // 6. 目录项回填章节下标：目录与 spine 不一定 1:1，前端不能按下标硬套
         assignTocChapterIndexes(toc, chapters);
 
         return book;
@@ -474,16 +494,118 @@ public class EpubParserService {
     }
 
     /**
-     * 根据 href 在目录中查找标题（用于章节命名），找不到则用序号兜底。
+     * 从章节 XHTML 中提取标题：优先 h1–h3，其次 &lt;title&gt;。
      */
-    private String findTocTitle(java.util.List<Book.TocItem> toc, String href, int index) {
+    private String extractTitle(String html) {
+        Matcher heading = HEADING_PATTERN.matcher(html);
+        if (heading.find()) {
+            String text = cleanText(heading.group(1));
+            if (!text.isBlank()) {
+                return text;
+            }
+        }
+        Matcher title = TITLE_TAG_PATTERN.matcher(html);
+        if (title.find()) {
+            String text = cleanText(title.group(1));
+            if (!text.isBlank()) {
+                return text;
+            }
+        }
+        return null;
+    }
+
+    private String cleanText(String value) {
+        if (value == null) {
+            return "";
+        }
+        return value.replaceAll("(?is)<[^>]+>", " ")
+                .replace("&nbsp;", " ")
+                .replace("&amp;", "&")
+                .replace("&lt;", "<")
+                .replace("&gt;", ">")
+                .replace("&quot;", "\"")
+                .replaceAll("\\s+", " ")
+                .trim();
+    }
+
+    /**
+     * 判断封面、版权页、目录页等前言页，避免它们被编号成“第 N 章”。
+     */
+    private boolean isFrontMatter(String href, String title, String html) {
+        String h = href == null ? "" : href.toLowerCase();
+        String t = title == null ? "" : title.toLowerCase();
+        if (h.contains("/cover") || h.contains("titlepage") || h.contains("title-page")
+                || h.contains("copyright") || h.contains("/toc") || h.contains("nav.xhtml")) {
+            return true;
+        }
+        if (t.matches("^(cover|封面|版权页?|copyright|title\\s*page|目录|contents|table of contents)$")) {
+            return true;
+        }
+        String plain = cleanText(html);
+        return plain.length() < 20 && (html.contains("<img") || html.contains("<svg"));
+    }
+
+    /**
+     * 阅读器暂不提供 EPUB 内部图片资源，移除 img 避免裂图图标和 alt 文本。
+     */
+    private String stripBrokenImages(String html) {
+        return html.replaceAll("(?is)<img\\b[^>]*>", "");
+    }
+
+    /**
+     * 没有 NAV/NCX 目录的书，用章节标题补一份目录，避免阅读器显示“无目录”。
+     */
+    private void fillTocIfEmpty(java.util.List<Book.TocItem> toc,
+                                java.util.List<Book.Chapter> chapters) {
+        if (!toc.isEmpty()) {
+            return;
+        }
+        java.util.List<Book.TocItem> generated = new java.util.ArrayList<>();
+        for (int i = 0; i < chapters.size(); i++) {
+            Book.Chapter chapter = chapters.get(i);
+            if (!isChapterHeading(chapter.getTitle())) {
+                continue;
+            }
+            generated.add(tocItem(chapter, i));
+        }
+        // 章节标题不是“第X章”格式时，至少把每章标题作为目录
+        if (generated.isEmpty()) {
+            for (int i = 0; i < chapters.size(); i++) {
+                generated.add(tocItem(chapters.get(i), i));
+            }
+        }
+        toc.addAll(generated);
+    }
+
+    private Book.TocItem tocItem(Book.Chapter chapter, int index) {
+        Book.TocItem item = new Book.TocItem();
+        item.setTitle(chapter.getTitle());
+        item.setHref(chapter.getId());
+        item.setLevel(1);
+        item.setChapterIndex(index);
+        return item;
+    }
+
+    private boolean isChapterHeading(String title) {
+        if (title == null) {
+            return false;
+        }
+        String t = title.trim();
+        return t.matches("^第\\s*[0-9零一二三四五六七八九十百千万两]+\\s*[章節节回卷篇部].*")
+                || t.matches("(?i)^(chapter|section)\\s+[0-9ivxlcdm]+.*");
+    }
+
+    /**
+     * 根据 href 在目录中查找标题；找不到返回 null，由调用方从章节 HTML 中提取。
+     */
+    private String findTocTitle(java.util.List<Book.TocItem> toc, String href) {
         for (Book.TocItem item : toc) {
             String t = matchTocTitle(item, href);
             if (t != null) {
                 return t;
             }
         }
-        return "第 " + (index + 1) + " 章";
+        return null;
     }
 
     private String matchTocTitle(Book.TocItem item, String href) {
